@@ -22,7 +22,7 @@ planejamento das etapas anteriores.
 
 ## O que está implementado nesta etapa
 
-- Todas as telas previstas: login, painéis, banco de questões, cadastro/edição
+- Todas as telas previstas: boas-vindas, login, cadastro, recuperar senha, painéis, banco de questões, cadastro/edição
   de questão, montagem de prova (2 passos), revisão da Direção, impressão da
   Repografia e perfil.
 - Navegação funcional entre todas as telas (`Navigator`), com botão de voltar
@@ -66,7 +66,10 @@ lib/
     app_drawer.dart               Menu lateral (por perfil)
     common.dart                     Componentes reutilizados
   screens/
-    login_screen.dart                 Tela inicial / login
+    boas_vindas_screen.dart           Tela inicial (leva ao login)
+    login_screen.dart                 Login
+    cadastro_screen.dart              Criar conta (simulado)
+    recuperar_senha_screen.dart       Recuperar senha (simulado)
     perfil_screen.dart                 Perfil (comum aos 3 perfis)
     professor/
       painel_professor_screen.dart

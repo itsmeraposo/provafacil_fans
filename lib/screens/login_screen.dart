@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../theme.dart';
+import 'cadastro_screen.dart';
 import 'direcao/painel_direcao_screen.dart';
 import 'professor/painel_professor_screen.dart';
+import 'recuperar_senha_screen.dart';
 import 'repografia/painel_repografia_screen.dart';
 
 /// Tela inicial da aplicação: login.
@@ -73,9 +75,35 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Future<void> _abrirCadastro() async {
+    final email = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const CadastroScreen()),
+    );
+    if (email != null && mounted) {
+      setState(() => _emailController.text = email);
+    }
+  }
+
+  void _abrirRecuperarSenha() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            RecuperarSenhaScreen(emailInicial: _emailController.text.trim()),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Mostra a seta de voltar (para a tela de boas-vindas) só quando há
+      // uma tela anterior; após "Sair" o login abre sem ela.
+      appBar: Navigator.of(context).canPop()
+          ? AppBar(
+              backgroundColor: AppColors.paper,
+              scrolledUnderElevation: 0,
+            )
+          : null,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -119,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'FANS — Faculdade Nossa Senhora',
+                      'FANS — Faculdade de Nova Serrana',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: AppColors.inkMuted, fontSize: 13),
                     ),
@@ -159,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ...Perfil.values.map(_opcaoPerfil),
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed: () {},
+                      onPressed: _abrirRecuperarSenha,
                       child: const Text('Esqueci minha senha'),
                     ),
                     const SizedBox(height: 8),
@@ -179,7 +207,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 10),
                     Center(
                       child: TextButton(
-                        onPressed: () {},
+                        onPressed: _abrirCadastro,
                         child: const Text('Ainda não tem conta? Cadastre-se'),
                       ),
                     ),

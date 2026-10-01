@@ -42,7 +42,7 @@ class Usuario {
     required this.nome,
     required this.email,
     required this.perfil,
-    this.instituicao = 'FANS — Faculdade Nossa Senhora',
+    this.instituicao = 'FANS — Faculdade de Nova Serrana',
     this.cargo = '',
     this.cursos = const [],
   });

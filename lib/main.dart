@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/login_screen.dart';
+import 'screens/boas_vindas_screen.dart';
 import 'theme.dart';
 
 void main() {
@@ -9,7 +9,7 @@ void main() {
 
 /// ProvaFácil FANS — etapa de navegação.
 ///
-/// A tela inicial é sempre o login: a partir dela o app direciona o usuário
+/// A tela inicial é a de boas-vindas, que leva ao login; dele o app direciona o usuário
 /// para o painel do seu perfil (Professor, Direção ou Repografia), cada um
 /// com seu próprio menu lateral, telas e fluxos de navegação.
 class ProvaFacilApp extends StatelessWidget {
@@ -29,7 +29,7 @@ class ProvaFacilApp extends StatelessWidget {
           child: child!,
         );
       },
-      home: const LoginScreen(),
+      home: const BoasVindasScreen(),
     );
   }
 }
