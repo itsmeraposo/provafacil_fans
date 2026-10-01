@@ -1,0 +1,25 @@
+name: provafacil_fans
+description: >
+  ProvaFácil FANS — app Flutter navegável com as telas, menus e fluxos de
+  navegação dos perfis Professor, Direção e Repografia. Etapa de navegação
+  (sem integração real de backend/banco de dados).
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo-fans.png
