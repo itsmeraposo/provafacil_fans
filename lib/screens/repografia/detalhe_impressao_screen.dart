@@ -75,26 +75,45 @@ class DetalheImpressaoScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            if (jaImpressa)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.mossSoft,
-                  borderRadius: BorderRadius.circular(8),
+            if (jaImpressa) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.mossSoft,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.check_circle_outline,
+                          size: 18, color: AppColors.moss),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text('Esta prova já foi marcada como impressa.',
+                            style: TextStyle(
+                                color: AppColors.moss, fontSize: 12.5)),
+                      ),
+                    ],
+                  ),
                 ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.check_circle_outline,
-                        size: 18, color: AppColors.moss),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text('Esta prova já foi marcada como impressa.',
-                          style: TextStyle(
-                              color: AppColors.moss, fontSize: 12.5)),
-                    ),
-                  ],
-                ),
-              )
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () {
+                  AppState.instancia
+                      .atualizarStatusProva(prova.id, StatusProva.aprovada);
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(
+                        builder: (_) => const PainelRepografiaScreen()),
+                    (rota) => false,
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Impressão desfeita. A prova voltou para a fila.')),
+                  );
+                },
+                icon: const Icon(Icons.undo, size: 18),
+                label: const Text('Desfazer impressão'),
+              ),
+            ]
             else
               ElevatedButton.icon(
                 onPressed: () {
