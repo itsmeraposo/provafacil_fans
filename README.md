@@ -35,10 +35,36 @@ planejamento das etapas anteriores.
 - Interface visual consistente (mesma paleta de cores e componentes do
   protótipo web) entre todas as telas.
 
-Como o enunciado permite, **não há integração real de backend/banco de
-dados** nesta etapa — os dados (usuários, questões e provas) são simulados em
-memória (`lib/mock_data.dart` e `lib/app_state.dart`), o suficiente para
-demonstrar toda a navegação e os fluxos funcionando de ponta a ponta.
+## Integração com o servidor
+
+O app conversa com a API do ProvaFácil (Node/Express + Firestore) pelo
+endereço definido em `lib/config.dart` (`apiBaseUrl`). O login usa o cookie de
+sessão do servidor (`provafacil_sessao`), guardado em memória por
+`lib/api.dart`.
+
+| Tela / botão | Endpoint |
+| --- | --- |
+| Entrar | `POST /api/auth/login` |
+| Cadastre-se | `POST /api/auth/registrar` (+ `GET /api/constantes`) |
+| Esqueci minha senha | `POST /api/auth/esqueci-senha` |
+| Reenviar confirmação | `POST /api/auth/reenviar-verificacao` |
+| Sair | `POST /api/auth/logout` |
+| Perfil: salvar / alterar senha / excluir conta | `PUT /api/auth/perfil`, `POST /api/auth/alterar-senha`, `DELETE /api/auth/conta` |
+| Painéis e Banco de Questões | `GET /api/questoes`, `GET /api/provas` |
+| Nova questão / editar / excluir | `POST`, `PUT`, `DELETE /api/questoes[/:id]` |
+| Salvar rascunho / Enviar para o coordenador | `POST /api/provas/rascunho`, `POST /api/provas/enviar` |
+| Gerar PDF / DOCX | `POST /api/provas/gerar-pdf`, `gerar-docx` |
+| Excluir rascunho | `DELETE /api/provas/:id` |
+| Direção: ver PDF / aprovar / reprovar / em análise | `GET /api/provas/:id/previa-pdf`, `PATCH /api/provas/:id/revisao` |
+| Repografia: abrir PDF / marcar e desfazer impressão | `GET /api/provas/:id/previa-pdf`, `PATCH /api/provas/:id/impressao` |
+
+No Android, o `AndroidManifest.xml` precisa da permissão de internet e, para
+servidor `http://` (desenvolvimento), de tráfego sem criptografia:
+
+```xml
+<uses-permission android:name="android.permission.INTERNET"/>
+<application ... android:usesCleartextTraffic="true">
+```
 
 ## Como executar
 
@@ -60,7 +86,7 @@ lib/
   main.dart                 Ponto de entrada
   theme.dart                 Paleta e tema visual
   models.dart                 Modelos (Usuario, Questao, Prova, Perfil)
-  mock_data.dart               Dados simulados
+  config.dart / api.dart / arquivos.dart / validators.dart   Servidor e utilitários
   app_state.dart                 Sessão e dados compartilhados entre telas
   widgets/
     app_drawer.dart               Menu lateral (por perfil)
@@ -68,8 +94,8 @@ lib/
   screens/
     boas_vindas_screen.dart           Tela inicial (leva ao login)
     login_screen.dart                 Login
-    cadastro_screen.dart              Criar conta (simulado)
-    recuperar_senha_screen.dart       Recuperar senha (simulado)
+    cadastro_screen.dart              Criar conta
+    recuperar_senha_screen.dart       Recuperar senha
     perfil_screen.dart                 Perfil (comum aos 3 perfis)
     professor/
       painel_professor_screen.dart

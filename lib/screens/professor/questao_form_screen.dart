@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import '../../app_state.dart';
 import '../../models.dart';
 import '../../theme.dart';
+import '../../widgets/common.dart';
 
 /// TELA DE DETALHES · Cadastro/edição de questão.
 ///
-/// Reaberta a partir do botão "+ Nova questão" (criação) ou ao tocar em uma
-/// questão da lista no Banco de Questões (edição). O botão de voltar do
-/// AppBar retorna sempre para a tela anterior.
+/// "Nova questão" cria (`POST /api/questoes`); tocar numa questão da lista
+/// edita (`PUT /api/questoes/:id`) ou exclui (`DELETE /api/questoes/:id`).
+/// O botão de voltar do AppBar retorna sempre para a tela anterior.
 class QuestaoFormScreen extends StatefulWidget {
   const QuestaoFormScreen({super.key, this.questao});
 
@@ -24,20 +25,37 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
   late final TextEditingController _textoController;
   late final TextEditingController _assuntoController;
   late final TextEditingController _valorController;
-  String _periodo = 'atual';
+  late String _curso;
+  late int _periodo;
+  late String _tipo;
+  bool _salvando = false;
 
   bool get _editando => widget.questao != null;
+
+  List<String> get _cursosDoUsuario {
+    final usuario = AppState.instancia.usuarioAtual;
+    final lista = <String>{
+      ...?usuario?.cursos,
+      if (widget.questao != null && widget.questao!.curso.isNotEmpty)
+        widget.questao!.curso,
+    }.toList();
+    return lista.isEmpty ? AppState.instancia.cursosDisponiveis : lista;
+  }
 
   @override
   void initState() {
     super.initState();
-    _textoController = TextEditingController(text: widget.questao?.texto ?? '');
-    _assuntoController =
-        TextEditingController(text: widget.questao?.assunto ?? '');
+    final questao = widget.questao;
+    _textoController = TextEditingController(text: questao?.texto ?? '');
+    _assuntoController = TextEditingController(text: questao?.assunto ?? '');
     _valorController = TextEditingController(
-      text: widget.questao != null ? widget.questao!.valor.toString() : '1.0',
+      text: questao != null ? questao.valor.toString() : '1.0',
     );
-    _periodo = widget.questao?.periodo ?? 'atual';
+    _curso = (questao != null && questao.curso.isNotEmpty)
+        ? questao.curso
+        : _cursosDoUsuario.first;
+    _periodo = questao?.periodo ?? 1;
+    _tipo = questao?.tipo ?? 'dissertativa';
   }
 
   @override
@@ -48,38 +66,31 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
     super.dispose();
   }
 
-  void _salvar() {
+  Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
+    final valor =
+        double.tryParse(_valorController.text.replaceAll(',', '.')) ?? 1.0;
 
-    final valor = double.tryParse(_valorController.text.replaceAll(',', '.')) ?? 1.0;
-
-    if (_editando) {
-      final atualizada = Questao(
-        id: widget.questao!.id,
+    setState(() => _salvando = true);
+    try {
+      await AppState.instancia.salvarQuestao(
+        id: widget.questao?.id,
         texto: _textoController.text.trim(),
+        tipo: _tipo,
         assunto: _assuntoController.text.trim(),
-        periodo: _periodo,
-        valor: valor,
-        usadaEm: widget.questao!.usadaEm,
-      );
-      AppState.instancia.atualizarQuestao(atualizada);
-    } else {
-      final nova = Questao(
-        id: 'q${DateTime.now().millisecondsSinceEpoch}',
-        texto: _textoController.text.trim(),
-        assunto: _assuntoController.text.trim(),
+        curso: _curso,
         periodo: _periodo,
         valor: valor,
       );
-      AppState.instancia.adicionarQuestao(nova);
+      if (!mounted) return;
+      mostrarMensagem(
+          context, _editando ? 'Questão atualizada.' : 'Questão adicionada ao banco.');
+      Navigator.of(context).pop();
+    } catch (erro) {
+      if (!mounted) return;
+      setState(() => _salvando = false);
+      mostrarMensagem(context, textoDoErro(erro));
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content:
-              Text(_editando ? 'Questão atualizada.' : 'Questão adicionada ao banco.')),
-    );
-    Navigator.of(context).pop();
   }
 
   void _excluir() {
@@ -96,10 +107,16 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.claret),
-            onPressed: () {
-              AppState.instancia.removerQuestao(widget.questao!.id);
+            onPressed: () async {
               Navigator.of(dialogContext).pop(); // fecha o diálogo
-              Navigator.of(context).pop(); // volta ao banco de questões
+              try {
+                await AppState.instancia.removerQuestao(widget.questao!.id);
+                if (!mounted) return;
+                Navigator.of(context).pop(); // volta ao banco de questões
+                mostrarMensagem(context, 'Questão excluída.');
+              } catch (erro) {
+                if (mounted) mostrarMensagem(context, textoDoErro(erro));
+              }
             },
             child: const Text('Excluir'),
           ),
@@ -110,6 +127,8 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cursos = _cursosDoUsuario;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_editando ? 'Editar questão' : 'Nova questão'),
@@ -118,7 +137,7 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
             IconButton(
               tooltip: 'Excluir',
               icon: const Icon(Icons.delete_outline),
-              onPressed: _excluir,
+              onPressed: _salvando ? null : _excluir,
             ),
         ],
       ),
@@ -154,20 +173,32 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
                     (valor == null || valor.trim().isEmpty) ? 'Obrigatório' : null,
               ),
               const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                isExpanded: true,
+                value: _curso,
+                decoration: const InputDecoration(labelText: 'Curso'),
+                items: cursos
+                    .map((curso) => DropdownMenuItem(
+                        value: curso,
+                        child: Text(curso, overflow: TextOverflow.ellipsis)))
+                    .toList(),
+                onChanged: (valor) => setState(() => _curso = valor ?? _curso),
+              ),
+              const SizedBox(height: 14),
               Row(
                 children: [
                   Expanded(
-                    child: DropdownButtonFormField<String>(
+                    child: DropdownButtonFormField<int>(
                       isExpanded: true,
                       value: _periodo,
                       decoration: const InputDecoration(labelText: 'Período'),
-                      items: const [
-                        DropdownMenuItem(value: 'atual', child: Text('Atual')),
-                        DropdownMenuItem(
-                            value: 'historico', child: Text('Histórico')),
-                      ],
+                      items: List.generate(
+                        10,
+                        (i) => DropdownMenuItem(
+                            value: i + 1, child: Text('${i + 1}º')),
+                      ),
                       onChanged: (valor) =>
-                          setState(() => _periodo = valor ?? 'atual'),
+                          setState(() => _periodo = valor ?? _periodo),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -185,14 +216,35 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                isExpanded: true,
+                value: _tipo,
+                decoration: const InputDecoration(labelText: 'Tipo da questão'),
+                items: const [
+                  DropdownMenuItem(
+                      value: 'dissertativa', child: Text('Dissertativa')),
+                  DropdownMenuItem(
+                      value: 'multipla_escolha',
+                      child: Text('Múltipla escolha')),
+                ],
+                onChanged: (valor) => setState(() => _tipo = valor ?? _tipo),
+              ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _salvar,
-                child: Text(_editando ? 'Salvar alterações' : 'Adicionar ao banco'),
+                onPressed: _salvando ? null : _salvar,
+                child: _salvando
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(_editando ? 'Salvar alterações' : 'Adicionar ao banco'),
               ),
               const SizedBox(height: 10),
               OutlinedButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: _salvando ? null : () => Navigator.of(context).pop(),
                 child: const Text('Cancelar'),
               ),
             ],

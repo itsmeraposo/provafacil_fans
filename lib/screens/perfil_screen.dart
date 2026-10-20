@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../theme.dart';
+import '../validators.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
 import 'login_screen.dart';
@@ -24,6 +25,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   late final TextEditingController _instituicaoController;
   late final TextEditingController _cargoController;
   bool _notificacoes = true;
+  bool _salvando = false;
 
   @override
   void initState() {
@@ -32,6 +34,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
     _nomeController = TextEditingController(text: usuario.nome);
     _instituicaoController = TextEditingController(text: usuario.instituicao);
     _cargoController = TextEditingController(text: usuario.cargo);
+    _notificacoes = usuario.notificacoesEmail;
   }
 
   @override
@@ -42,57 +45,119 @@ class _PerfilScreenState extends State<PerfilScreen> {
     super.dispose();
   }
 
-  void _salvar() {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Perfil atualizado.')));
+  Future<void> _salvar() async {
+    setState(() => _salvando = true);
+    try {
+      await AppState.instancia.atualizarPerfil(
+        nome: _nomeController.text,
+        instituicao: _instituicaoController.text,
+        cargo: _cargoController.text,
+        notificacoesEmail: _notificacoes,
+      );
+      if (mounted) mostrarMensagem(context, 'Perfil atualizado.');
+    } catch (erro) {
+      if (mounted) mostrarMensagem(context, textoDoErro(erro));
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
   }
 
   void _abrirAlterarSenha() {
     final senhaAtual = TextEditingController();
     final senhaNova = TextEditingController();
     final senhaConfirma = TextEditingController();
+    String? erro;
+    bool salvando = false;
 
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Alterar senha'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: senhaAtual,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Senha atual'),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, atualizarDialogo) => AlertDialog(
+          title: const Text('Alterar senha'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: senhaAtual,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Senha atual'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: senhaNova,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nova senha',
+                    helperText: 'Mínimo de 10 caracteres, com maiúscula, '
+                        'minúscula, número e caractere especial.',
+                    helperMaxLines: 3,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: senhaConfirma,
+                  obscureText: true,
+                  decoration:
+                      const InputDecoration(labelText: 'Confirmar nova senha'),
+                ),
+                if (erro != null) ...[
+                  const SizedBox(height: 10),
+                  Text(erro!,
+                      style: const TextStyle(
+                          color: AppColors.claret, fontSize: 12.5)),
+                ],
+              ],
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: senhaNova,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Nova senha'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: senhaConfirma,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Confirmar nova senha'),
+            ElevatedButton(
+              onPressed: salvando
+                  ? null
+                  : () async {
+                      if (senhaAtual.text.isEmpty) {
+                        atualizarDialogo(() => erro = 'Informe a senha atual.');
+                        return;
+                      }
+                      final problema = validarSenhaForte(senhaNova.text);
+                      if (problema != null) {
+                        atualizarDialogo(() => erro = problema);
+                        return;
+                      }
+                      if (senhaNova.text != senhaConfirma.text) {
+                        atualizarDialogo(
+                            () => erro = 'As senhas novas não conferem.');
+                        return;
+                      }
+                      atualizarDialogo(() {
+                        salvando = true;
+                        erro = null;
+                      });
+                      try {
+                        await AppState.instancia
+                            .alterarSenha(senhaAtual.text, senhaNova.text);
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop();
+                        }
+                        if (mounted) {
+                          mostrarMensagem(
+                              context, 'Senha alterada com sucesso.');
+                        }
+                      } catch (falha) {
+                        atualizarDialogo(() {
+                          salvando = false;
+                          erro = textoDoErro(falha);
+                        });
+                      }
+                    },
+              child: const Text('Salvar'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Senha alterada com sucesso.')),
-              );
-            },
-            child: const Text('Salvar'),
-          ),
-        ],
       ),
     );
   }
@@ -113,13 +178,18 @@ class _PerfilScreenState extends State<PerfilScreen> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.claret),
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(dialogContext).pop();
-              AppState.instancia.sair();
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                (rota) => false,
-              );
+              try {
+                await AppState.instancia.excluirConta();
+                if (!mounted) return;
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (rota) => false,
+                );
+              } catch (erro) {
+                if (mounted) mostrarMensagem(context, textoDoErro(erro));
+              }
             },
             child: const Text('Excluir definitivamente'),
           ),
@@ -213,7 +283,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   ],
                   const SizedBox(height: 14),
                   ElevatedButton(
-                    onPressed: _salvar,
+                    onPressed: _salvando ? null : _salvar,
                     child: const Text('Salvar alterações'),
                   ),
                 ],

@@ -37,22 +37,46 @@ extension PerfilRotulo on Perfil {
   }
 }
 
+const String instituicaoPadrao = 'FANS — Faculdade de Nova Serrana';
+
 class Usuario {
   Usuario({
+    required this.id,
     required this.nome,
     required this.email,
     required this.perfil,
-    this.instituicao = 'FANS — Faculdade de Nova Serrana',
+    this.instituicao = instituicaoPadrao,
     this.cargo = '',
     this.cursos = const [],
+    this.notificacoesEmail = true,
   });
 
+  factory Usuario.fromJson(Map<String, dynamic> json) {
+    final instituicao = (json['instituicao'] ?? '').toString();
+    return Usuario(
+      id: (json['id'] ?? '').toString(),
+      nome: (json['nome'] ?? '').toString(),
+      email: (json['email'] ?? '').toString(),
+      perfil: Perfil.values.firstWhere(
+        (p) => p.chave == json['perfil'],
+        orElse: () => Perfil.professor,
+      ),
+      instituicao: instituicao.isEmpty ? instituicaoPadrao : instituicao,
+      cargo: (json['cargo'] ?? '').toString(),
+      cursos: (json['cursos'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
+      notificacoesEmail: json['notificacoesEmail'] != false,
+    );
+  }
+
+  final String id;
   final String nome;
   final String email;
   final Perfil perfil;
   final String instituicao;
   final String cargo;
   final List<String> cursos;
+  final bool notificacoesEmail;
 }
 
 class Questao {
@@ -60,17 +84,42 @@ class Questao {
     required this.id,
     required this.texto,
     required this.assunto,
-    required this.periodo, // 'atual' | 'historico'
+    this.curso = '',
+    this.periodo,
+    this.tipo = 'dissertativa', // 'dissertativa' | 'multipla_escolha'
     required this.valor,
     this.usadaEm = 0,
   });
 
+  factory Questao.fromJson(Map<String, dynamic> json) {
+    return Questao(
+      id: (json['id'] ?? '').toString(),
+      texto: (json['texto'] ?? '').toString(),
+      assunto: (json['assunto'] ?? 'Outros').toString(),
+      curso: (json['curso'] ?? '').toString(),
+      periodo: int.tryParse('${json['periodo']}'),
+      tipo: json['tipo'] == 'multipla_escolha'
+          ? 'multipla_escolha'
+          : 'dissertativa',
+      valor: double.tryParse('${json['valor']}') ?? 1.0,
+      usadaEm: int.tryParse('${json['usadaEm']}') ?? 0,
+    );
+  }
+
   final String id;
   String texto;
   String assunto;
-  String periodo;
+  String curso;
+  int? periodo; // período do curso, de 1 a 10
+  String tipo;
   double valor;
   int usadaEm;
+
+  String get periodoRotulo =>
+      periodo == null ? 'Sem período' : '${periodo}º período';
+
+  String get tipoRotulo =>
+      tipo == 'multipla_escolha' ? 'Múltipla escolha' : 'Dissertativa';
 }
 
 enum StatusProva { rascunho, emRevisao, aprovada, reprovada, impressa }
@@ -92,6 +141,21 @@ extension StatusProvaRotulo on StatusProva {
   }
 }
 
+StatusProva _statusDe(String? bruto, bool impressa) {
+  switch (bruto) {
+    case 'em_revisao':
+      return StatusProva.emRevisao;
+    case 'aprovada':
+      // No servidor a impressão é um campo à parte (`impressa`) e não muda
+      // o status da prova; no app mostramos como "Impressa".
+      return impressa ? StatusProva.impressa : StatusProva.aprovada;
+    case 'reprovada':
+      return StatusProva.reprovada;
+    default:
+      return StatusProva.rascunho;
+  }
+}
+
 class Prova {
   Prova({
     required this.id,
@@ -99,23 +163,70 @@ class Prova {
     required this.curso,
     required this.professor,
     required this.data,
+    this.periodo = '',
     this.etapa = '1ª',
     this.valorProva = '10,0',
+    this.instrucoes = '',
+    this.linhasResposta = 5,
     this.status = StatusProva.rascunho,
     List<Questao>? questoes,
     this.comentarioDirecao,
-  }) : questoes = questoes ?? [];
+    List<String>? questoesReprovadas,
+    this.criadoPorId = '',
+  })  : questoes = questoes ?? [],
+        questoesReprovadas = questoesReprovadas ?? [];
+
+  factory Prova.fromJson(Map<String, dynamic> json) {
+    final porId = <String, Questao>{};
+    for (final item in (json['questoesSnapshot'] as List?) ?? const []) {
+      if (item is Map<String, dynamic>) {
+        final questao = Questao.fromJson(item);
+        porId[questao.id] = questao;
+      }
+    }
+    final ids = ((json['questaoIds'] as List?) ?? const [])
+        .map((e) => e.toString())
+        .toList();
+    final ordenadas =
+        ids.where(porId.containsKey).map((id) => porId[id]!).toList();
+    final comentario = (json['comentarioCoordenador'] ?? '').toString();
+
+    return Prova(
+      id: (json['id'] ?? '').toString(),
+      titulo: (json['titulo'] ?? 'Avaliação').toString(),
+      curso: (json['curso'] ?? '').toString(),
+      professor: (json['professor'] ?? '').toString(),
+      data: (json['data'] ?? '').toString(),
+      periodo: (json['periodo'] ?? '').toString(),
+      etapa: (json['etapa'] ?? '').toString(),
+      valorProva: (json['valorProva'] ?? '').toString(),
+      instrucoes: (json['instrucoes'] ?? '').toString(),
+      linhasResposta: int.tryParse('${json['linhasResposta']}') ?? 5,
+      status: _statusDe(json['status'] as String?, json['impressa'] == true),
+      questoes: ordenadas.isNotEmpty ? ordenadas : porId.values.toList(),
+      comentarioDirecao: comentario.isEmpty ? null : comentario,
+      questoesReprovadas: ((json['questoesReprovadas'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      criadoPorId: (json['criadoPorId'] ?? '').toString(),
+    );
+  }
 
   final String id;
   String titulo;
   String curso;
   String professor;
   String data;
+  String periodo;
   String etapa;
   String valorProva;
+  String instrucoes;
+  int linhasResposta;
   StatusProva status;
   List<Questao> questoes;
   String? comentarioDirecao;
+  List<String> questoesReprovadas;
+  final String criadoPorId;
 
   double get pontuacaoTotal => questoes.fold(0, (soma, q) => soma + q.valor);
 }

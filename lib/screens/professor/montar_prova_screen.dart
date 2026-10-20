@@ -31,17 +31,19 @@ class _MontarProvaScreenState extends State<MontarProvaScreen> {
 
   void _continuar() {
     final estado = AppState.instancia;
-    final questoesSelecionadas = estado.questoes
-        .where((q) => _selecionadas.contains(q.id))
-        .toList();
+    final usuario = estado.usuarioAtual!;
+    final questoesSelecionadas =
+        estado.questoes.where((q) => _selecionadas.contains(q.id)).toList();
 
+    // Prova nova ainda não existe no servidor (id vazio): ela é criada ao
+    // salvar o rascunho, enviar ao coordenador ou gerar o arquivo.
     final novaProva = Prova(
-      id: 'p${DateTime.now().millisecondsSinceEpoch}',
+      id: '',
       titulo: 'Avaliação',
-      curso: estado.usuarioAtual?.cursos.isNotEmpty == true
-          ? estado.usuarioAtual!.cursos.first
-          : 'Análise e Desenvolvimento de Sistemas',
-      professor: estado.usuarioAtual?.nome ?? '',
+      curso: usuario.cursos.isNotEmpty
+          ? usuario.cursos.first
+          : estado.cursosDisponiveis.first,
+      professor: usuario.nome,
       data: '',
       status: StatusProva.rascunho,
       questoes: questoesSelecionadas,

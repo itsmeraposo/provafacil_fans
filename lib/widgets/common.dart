@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../api.dart';
+import '../app_state.dart';
 import '../models.dart';
 import '../theme.dart';
 
@@ -286,6 +288,98 @@ class LinhaProva extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Texto amigável para qualquer erro (da API ou inesperado).
+String textoDoErro(Object erro) =>
+    erro is ApiException ? erro.mensagem : 'Algo deu errado. Tente novamente.';
+
+void mostrarMensagem(BuildContext context, String texto) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(texto)));
+}
+
+/// Faixa de erro com botão para tentar de novo.
+class BannerErro extends StatelessWidget {
+  const BannerErro({super.key, required this.texto, this.aoTentarDeNovo});
+
+  final String texto;
+  final VoidCallback? aoTentarDeNovo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.claretSoft,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.claret.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, size: 18, color: AppColors.claret),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(texto,
+                style: const TextStyle(fontSize: 12.5, color: AppColors.claret)),
+          ),
+          if (aoTentarDeNovo != null) ...[
+            const SizedBox(width: 6),
+            TextButton(
+              onPressed: aoTentarDeNovo,
+              child: const Text('Tentar de novo'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Corpo dos painéis: reconstrói quando os dados do servidor mudam e
+/// permite "puxar para atualizar".
+class PainelAtualizavel extends StatelessWidget {
+  const PainelAtualizavel({super.key, required this.construir});
+
+  final List<Widget> Function(BuildContext context) construir;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AppState.instancia,
+      builder: (context, _) {
+        final estado = AppState.instancia;
+        final primeiraCarga = estado.carregando &&
+            estado.provas.isEmpty &&
+            estado.questoes.isEmpty;
+
+        return RefreshIndicator(
+          onRefresh: estado.carregarDados,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            children: primeiraCarga
+                ? const [
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  ]
+                : [
+                    if (estado.erroCarregamento != null)
+                      BannerErro(
+                        texto: estado.erroCarregamento!,
+                        aoTentarDeNovo: estado.carregarDados,
+                      ),
+                    ...construir(context),
+                  ],
+          ),
+        );
+      },
     );
   }
 }

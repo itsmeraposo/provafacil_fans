@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../app_state.dart';
 import '../theme.dart';
+import '../validators.dart';
+import '../widgets/common.dart';
 
-/// TELA · Recuperar senha.
+/// TELA · Recuperar senha (`POST /api/auth/esqueci-senha`).
 ///
-/// Acessada pelo link "Esqueci minha senha" do login. O envio do e-mail é
-/// simulado nesta etapa: a tela só confirma o pedido e oferece voltar ao
-/// login.
+/// O servidor envia por e-mail um link (válido por 1 hora) para criar uma
+/// nova senha. A resposta é sempre a mesma, exista ou não a conta.
 class RecuperarSenhaScreen extends StatefulWidget {
   const RecuperarSenhaScreen({super.key, this.emailInicial = ''});
 
@@ -19,7 +21,9 @@ class RecuperarSenhaScreen extends StatefulWidget {
 class _RecuperarSenhaScreenState extends State<RecuperarSenhaScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _emailController;
-  bool _enviado = false;
+  bool _enviando = false;
+  String? _mensagem; // preenchida quando o pedido foi aceito pelo servidor
+  String? _erro;
 
   @override
   void initState() {
@@ -33,9 +37,27 @@ class _RecuperarSenhaScreenState extends State<RecuperarSenhaScreen> {
     super.dispose();
   }
 
-  void _enviar() {
+  Future<void> _enviar() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _enviado = true);
+    setState(() {
+      _enviando = true;
+      _erro = null;
+    });
+    try {
+      final mensagem =
+          await AppState.instancia.esqueciSenha(_emailController.text);
+      if (!mounted) return;
+      setState(() {
+        _enviando = false;
+        _mensagem = mensagem;
+      });
+    } catch (erro) {
+      if (!mounted) return;
+      setState(() {
+        _enviando = false;
+        _erro = textoDoErro(erro);
+      });
+    }
   }
 
   @override
@@ -48,7 +70,7 @@ class _RecuperarSenhaScreenState extends State<RecuperarSenhaScreen> {
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
-              child: _enviado ? _confirmacao() : _formulario(),
+              child: _mensagem != null ? _confirmacao() : _formulario(),
             ),
           ),
         ),
@@ -72,14 +94,25 @@ class _RecuperarSenhaScreenState extends State<RecuperarSenhaScreen> {
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
             decoration: const InputDecoration(labelText: 'E-mail'),
-            validator: (valor) => (valor == null || !valor.contains('@'))
-                ? 'Informe um e-mail válido'
-                : null,
+            validator: validarEmail,
           ),
+          if (_erro != null) ...[
+            const SizedBox(height: 12),
+            Text(_erro!,
+                style:
+                    const TextStyle(color: AppColors.claret, fontSize: 12.5)),
+          ],
           const SizedBox(height: 20),
           ElevatedButton(
-            onPressed: _enviar,
-            child: const Text('Enviar instruções'),
+            onPressed: _enviando ? null : _enviar,
+            child: _enviando
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Enviar instruções'),
           ),
           const SizedBox(height: 10),
           OutlinedButton(
@@ -99,15 +132,13 @@ class _RecuperarSenhaScreenState extends State<RecuperarSenhaScreen> {
             size: 40, color: AppColors.moss),
         const SizedBox(height: 14),
         const Text(
-          'Instruções enviadas',
+          'Pedido enviado',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Text(
-          'Se existir uma conta para ${_emailController.text.trim()}, '
-          'você receberá um e-mail com o passo a passo. '
-          '(Envio simulado nesta etapa.)',
+          _mensagem!,
           textAlign: TextAlign.center,
           style: const TextStyle(
               fontSize: 13, height: 1.4, color: AppColors.inkMuted),

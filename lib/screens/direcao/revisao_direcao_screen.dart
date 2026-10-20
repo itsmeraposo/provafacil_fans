@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
+import '../../arquivos.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -8,9 +9,9 @@ import 'painel_direcao_screen.dart';
 
 /// TELA DE DETALHES · Revisão da Direção.
 ///
-/// Acessada a partir do Painel da Direção. Permite marcar questões
-/// problemáticas, escrever um comentário para o professor e decidir entre
-/// aprovar, reprovar ou deixar a prova em análise.
+/// Mostra o PDF real da prova (`GET /api/provas/:id/previa-pdf`) e permite
+/// marcar questões problemáticas, escrever um comentário e decidir entre
+/// aprovar, reprovar ou deixar em análise (`PATCH /api/provas/:id/revisao`).
 class RevisaoDirecaoScreen extends StatefulWidget {
   const RevisaoDirecaoScreen({super.key, required this.prova});
 
@@ -21,8 +22,15 @@ class RevisaoDirecaoScreen extends StatefulWidget {
 }
 
 class _RevisaoDirecaoScreenState extends State<RevisaoDirecaoScreen> {
-  final Set<String> _questoesMarcadas = {};
+  late final Set<String> _questoesMarcadas;
   final _comentarioController = TextEditingController();
+  bool _ocupado = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _questoesMarcadas = widget.prova.questoesReprovadas.toSet();
+  }
 
   @override
   void dispose() {
@@ -32,29 +40,51 @@ class _RevisaoDirecaoScreenState extends State<RevisaoDirecaoScreen> {
 
   bool get _jaDecidida =>
       widget.prova.status == StatusProva.aprovada ||
-      widget.prova.status == StatusProva.reprovada;
+      widget.prova.status == StatusProva.reprovada ||
+      widget.prova.status == StatusProva.impressa;
 
-  void _decidir(StatusProva novoStatus) {
-    AppState.instancia.atualizarStatusProva(
-      widget.prova.id,
-      novoStatus,
-      comentario: _comentarioController.text.trim().isEmpty
-          ? null
-          : _comentarioController.text.trim(),
-    );
+  Future<void> _decidir(String status) async {
+    if (_ocupado) return;
+    setState(() => _ocupado = true);
+    try {
+      await AppState.instancia.revisarProva(
+        widget.prova.id,
+        status: status,
+        comentario: _comentarioController.text.trim(),
+        questoesReprovadas: _questoesMarcadas.toList(),
+      );
+      if (!mounted) return;
 
-    final mensagem = switch (novoStatus) {
-      StatusProva.aprovada => 'Prova aprovada e liberada para a Repografia.',
-      StatusProva.reprovada => 'Prova reprovada. O professor foi notificado.',
-      _ => 'Prova mantida em análise.',
-    };
+      final mensagem = switch (status) {
+        'aprovada' => 'Prova aprovada e liberada para a Repografia.',
+        'reprovada' => 'Prova reprovada. O professor foi notificado.',
+        _ => 'Prova mantida em análise.',
+      };
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const PainelDirecaoScreen()),
+        (rota) => false,
+      );
+      mostrarMensagem(context, mensagem);
+    } catch (erro) {
+      if (!mounted) return;
+      setState(() => _ocupado = false);
+      mostrarMensagem(context, textoDoErro(erro));
+    }
+  }
 
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const PainelDirecaoScreen()),
-      (rota) => false,
-    );
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(mensagem)));
+  Future<void> _verPdf() async {
+    if (_ocupado) return;
+    setState(() => _ocupado = true);
+    try {
+      final bytes =
+          await AppState.instancia.baixarPreviaPdf(widget.prova.id);
+      await Arquivos.visualizarPdf(
+          bytes, Arquivos.nome(widget.prova.titulo, 'pdf'));
+    } catch (erro) {
+      if (mounted) mostrarMensagem(context, textoDoErro(erro));
+    } finally {
+      if (mounted) setState(() => _ocupado = false);
+    }
   }
 
   @override
@@ -73,10 +103,17 @@ class _RevisaoDirecaoScreenState extends State<RevisaoDirecaoScreen> {
             ],
           ),
         ),
-        body: TabBarView(
+        body: Column(
           children: [
-            _abaPrevia(prova),
-            _abaDecisao(prova),
+            if (_ocupado) const LinearProgressIndicator(minHeight: 2),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _abaPrevia(prova),
+                  _abaDecisao(prova),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -95,19 +132,27 @@ class _RevisaoDirecaoScreenState extends State<RevisaoDirecaoScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(prova.titulo,
-                      style:
-                          const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   Text('${prova.curso} · Etapa ${prova.etapa} · ${prova.data}',
-                      style: const TextStyle(color: AppColors.inkMuted, fontSize: 12.5)),
+                      style: const TextStyle(
+                          color: AppColors.inkMuted, fontSize: 12.5)),
                   const SizedBox(height: 2),
                   Text('Professor(a): ${prova.professor}',
-                      style: const TextStyle(color: AppColors.inkMuted, fontSize: 12.5)),
+                      style: const TextStyle(
+                          color: AppColors.inkMuted, fontSize: 12.5)),
                   const Divider(height: 28),
-                  Text('Prévia simulada do PDF gerado (sem geração real de '
-                      'arquivo nesta etapa). ${prova.questoes.length} questão(ões), '
+                  Text(
+                      '${prova.questoes.length} questão(ões), '
                       '${prova.pontuacaoTotal.toStringAsFixed(1)} pts no total.',
                       style: const TextStyle(fontSize: 12.5, height: 1.5)),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: _ocupado ? null : _verPdf,
+                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                    label: const Text('Ver PDF da prova'),
+                  ),
                 ],
               ),
             ),
@@ -132,13 +177,15 @@ class _RevisaoDirecaoScreenState extends State<RevisaoDirecaoScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, size: 18, color: AppColors.accent),
+                  const Icon(Icons.info_outline,
+                      size: 18, color: AppColors.accent),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Esta prova já foi ${prova.status.rotulo.toLowerCase()}.'
                       '${prova.comentarioDirecao != null ? '\nComentário: ${prova.comentarioDirecao}' : ''}',
-                      style: const TextStyle(fontSize: 12.5, color: AppColors.accent),
+                      style: const TextStyle(
+                          fontSize: 12.5, color: AppColors.accent),
                     ),
                   ),
                 ],
@@ -177,7 +224,8 @@ class _RevisaoDirecaoScreenState extends State<RevisaoDirecaoScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 12.5)),
                   subtitle: Text(questao.assunto,
-                      style: const TextStyle(fontSize: 11, color: AppColors.inkMuted)),
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.inkMuted)),
                 ),
               );
             }),
@@ -195,18 +243,18 @@ class _RevisaoDirecaoScreenState extends State<RevisaoDirecaoScreen> {
           const SizedBox(height: 20),
           if (!_jaDecidida) ...[
             ElevatedButton(
-              onPressed: () => _decidir(StatusProva.aprovada),
+              onPressed: _ocupado ? null : () => _decidir('aprovada'),
               child: const Text('Aprovar prova'),
             ),
             const SizedBox(height: 10),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: AppColors.claret),
-              onPressed: () => _decidir(StatusProva.reprovada),
+              onPressed: _ocupado ? null : () => _decidir('reprovada'),
               child: const Text('Reprovar prova'),
             ),
             const SizedBox(height: 10),
             OutlinedButton(
-              onPressed: () => _decidir(StatusProva.emRevisao),
+              onPressed: _ocupado ? null : () => _decidir('em_revisao'),
               child: const Text('Deixar em análise'),
             ),
           ],

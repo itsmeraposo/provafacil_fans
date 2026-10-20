@@ -200,10 +200,11 @@ class AppDrawer extends StatelessWidget {
     );
   }
 
-  void _sair(BuildContext context) {
-    Navigator.of(context).pop(); // fecha o drawer
-    AppState.instancia.sair();
-    Navigator.of(context).pushAndRemoveUntil(
+  Future<void> _sair(BuildContext context) async {
+    final navegador = Navigator.of(context);
+    navegador.pop(); // fecha o drawer
+    await AppState.instancia.sair();
+    navegador.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (rota) => false,
     );

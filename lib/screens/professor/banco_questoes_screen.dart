@@ -8,11 +8,11 @@ import '../../widgets/common.dart';
 import 'montar_prova_screen.dart';
 import 'questao_form_screen.dart';
 
-/// TELA · Banco de Questões.
+/// TELA · Banco de Questões (`GET /api/questoes`).
 ///
-/// Lista mestre-detalhe: filtros por período e assunto, busca por
-/// palavra-chave, botões de acesso à funcionalidade "Nova questão" (tela de
-/// detalhes) e atalho para iniciar a montagem de uma prova.
+/// Lista com filtros por período e assunto, busca por palavra-chave, botão
+/// "Nova questão" (tela de detalhes) e atalho para montar uma prova. Use o
+/// botão de atualizar do topo para buscar de novo no servidor.
 class BancoQuestoesScreen extends StatefulWidget {
   const BancoQuestoesScreen({super.key});
 
@@ -21,7 +21,7 @@ class BancoQuestoesScreen extends StatefulWidget {
 }
 
 class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
-  String? _filtroPeriodo;
+  int? _filtroPeriodo;
   String? _filtroAssunto;
   final _buscaController = TextEditingController();
 
@@ -32,9 +32,8 @@ class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
   }
 
   List<Questao> _questoesFiltradas() {
-    final todas = AppState.instancia.questoes;
     final busca = _buscaController.text.trim().toLowerCase();
-    return todas.where((questao) {
+    return AppState.instancia.questoes.where((questao) {
       if (_filtroPeriodo != null && questao.periodo != _filtroPeriodo) {
         return false;
       }
@@ -52,15 +51,37 @@ class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final todasQuestoes = AppState.instancia.questoes;
-    final assuntos = todasQuestoes.map((q) => q.assunto).toSet().toList()..sort();
+    return ListenableBuilder(
+      listenable: AppState.instancia,
+      builder: (context, _) => _tela(context),
+    );
+  }
+
+  Widget _tela(BuildContext context) {
+    final estado = AppState.instancia;
+    final assuntos = estado.questoes.map((q) => q.assunto).toSet().toList()
+      ..sort();
+    final periodos = estado.questoes
+        .map((q) => q.periodo)
+        .whereType<int>()
+        .toSet()
+        .toList()
+      ..sort();
     final filtradas = _questoesFiltradas();
 
     return TelaPrincipal(
       titulo: 'Banco de Questões',
       drawer: const AppDrawer(telaAtual: 'Banco de Questões'),
+      acoes: [
+        IconButton(
+          tooltip: 'Atualizar',
+          icon: const Icon(Icons.refresh),
+          onPressed: estado.carregando ? null : estado.carregarDados,
+        ),
+      ],
       corpo: Column(
         children: [
+          if (estado.carregando) const LinearProgressIndicator(minHeight: 2),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: TextField(
@@ -80,10 +101,9 @@ class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
                 children: [
                   _chipFiltro('Todos os períodos', _filtroPeriodo == null,
                       () => setState(() => _filtroPeriodo = null)),
-                  _chipFiltro('Atual', _filtroPeriodo == 'atual',
-                      () => setState(() => _filtroPeriodo = 'atual')),
-                  _chipFiltro('Histórico', _filtroPeriodo == 'historico',
-                      () => setState(() => _filtroPeriodo = 'historico')),
+                  for (final periodo in periodos)
+                    _chipFiltro('${periodo}º', _filtroPeriodo == periodo,
+                        () => setState(() => _filtroPeriodo = periodo)),
                   const SizedBox(width: 10),
                   Container(width: 1, height: 22, color: AppColors.rule),
                   const SizedBox(width: 10),
@@ -97,19 +117,30 @@ class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
             ),
           ),
           const Divider(height: 1),
+          if (estado.erroCarregamento != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: BannerErro(
+                texto: estado.erroCarregamento!,
+                aoTentarDeNovo: estado.carregarDados,
+              ),
+            ),
           Expanded(
             child: filtradas.isEmpty
                 ? const EstadoVazio(
-                    texto:
-                        'Nenhuma questão encontrada com os filtros atuais.',
+                    texto: 'Nenhuma questão encontrada com os filtros atuais.',
                     icone: Icons.search_off,
                   )
-                : ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filtradas.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, indice) =>
-                        _cartaoQuestao(context, filtradas[indice]),
+                : RefreshIndicator(
+                    onRefresh: estado.carregarDados,
+                    child: ListView.separated(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filtradas.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, indice) =>
+                          _cartaoQuestao(context, filtradas[indice]),
+                    ),
                   ),
           ),
           SafeArea(
@@ -129,7 +160,7 @@ class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
-                    onPressed: filtradas.isEmpty
+                    onPressed: estado.questoes.isEmpty
                         ? null
                         : () => Navigator.of(context).push(
                               MaterialPageRoute(
@@ -181,10 +212,8 @@ class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
                       runSpacing: 4,
                       children: [
                         _selo(questao.assunto, AppColors.accent),
-                        _selo(
-                          questao.periodo == 'atual' ? 'Atual' : 'Histórico',
-                          AppColors.inkMuted,
-                        ),
+                        _selo(questao.periodoRotulo, AppColors.inkMuted),
+                        _selo(questao.tipoRotulo, AppColors.inkMuted),
                       ],
                     ),
                   ),
@@ -202,7 +231,9 @@ class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
                 style: const TextStyle(fontSize: 13, height: 1.35),
               ),
               const SizedBox(height: 6),
-              Text('Usada em ${questao.usadaEm} prova(s)',
+              Text(
+                  '${questao.curso.isEmpty ? '' : '${questao.curso} · '}'
+                  'Usada em ${questao.usadaEm} prova(s)',
                   style:
                       const TextStyle(color: AppColors.inkFaint, fontSize: 11)),
             ],

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../api.dart';
 import '../models.dart';
 import '../theme.dart';
+import '../validators.dart';
+import '../widgets/common.dart';
 import 'cadastro_screen.dart';
 import 'direcao/painel_direcao_screen.dart';
 import 'professor/painel_professor_screen.dart';
@@ -11,10 +14,9 @@ import 'repografia/painel_repografia_screen.dart';
 
 /// Tela inicial da aplicação: login.
 ///
-/// Como esta etapa do projeto trata apenas de navegação (o enunciado dispensa
-/// a lógica completa de backend), o campo "Entrar como" simula a
-/// autenticação e define qual perfil de acesso — professor, direção ou
-/// repografia — a app deverá exibir a partir do login.
+/// Autentica no servidor (`POST /api/auth/login`). O campo "Entrar como"
+/// precisa bater com o perfil da conta; em seguida o app abre o painel
+/// do perfil (professor, direção ou repografia).
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -24,10 +26,12 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController(text: 'ana.souza@fans.edu.br');
-  final _senhaController = TextEditingController(text: 'senha123');
+  final _emailController = TextEditingController();
+  final _senhaController = TextEditingController();
   Perfil _perfilSelecionado = Perfil.professor;
   bool _carregando = false;
+  String? _erro;
+  bool _emailNaoVerificado = false;
 
   @override
   void dispose() {
@@ -39,31 +43,39 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _entrar() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _carregando = true);
-    await Future<void>.delayed(const Duration(milliseconds: 400));
+    setState(() {
+      _carregando = true;
+      _erro = null;
+      _emailNaoVerificado = false;
+    });
 
-    final nome = switch (_perfilSelecionado) {
-      Perfil.professor => 'Ana Beatriz Souza',
-      Perfil.direcao => 'Roberto Nascimento',
-      Perfil.repografia => 'Juliana Prado',
-    };
-
-    AppState.instancia.entrar(
-      Usuario(
-        nome: nome,
-        email: _emailController.text.trim(),
+    try {
+      await AppState.instancia.entrar(
+        email: _emailController.text,
+        senha: _senhaController.text,
         perfil: _perfilSelecionado,
-        cargo: _perfilSelecionado == Perfil.professor ? 'Professor(a)' : '',
-        cursos: _perfilSelecionado == Perfil.professor
-            ? ['Análise e Desenvolvimento de Sistemas']
-            : const [],
-      ),
-    );
+      );
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      setState(() {
+        _carregando = false;
+        _erro = erro.mensagem;
+        _emailNaoVerificado = erro.dados?['emailNaoVerificado'] == true;
+      });
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _carregando = false;
+        _erro = 'Não foi possível entrar. Tente novamente.';
+      });
+      return;
+    }
 
     if (!mounted) return;
     setState(() => _carregando = false);
 
-    final destino = switch (_perfilSelecionado) {
+    final destino = switch (AppState.instancia.usuarioAtual!.perfil) {
       Perfil.professor => const PainelProfessorScreen(),
       Perfil.direcao => const PainelDirecaoScreen(),
       Perfil.repografia => const PainelRepografiaScreen(),
@@ -73,6 +85,16 @@ class _LoginScreenState extends State<LoginScreen> {
       MaterialPageRoute(builder: (_) => destino),
       (rota) => false,
     );
+  }
+
+  Future<void> _reenviarVerificacao() async {
+    try {
+      final mensagem = await AppState.instancia
+          .reenviarVerificacao(_emailController.text);
+      if (mounted) mostrarMensagem(context, mensagem);
+    } catch (erro) {
+      if (mounted) mostrarMensagem(context, textoDoErro(erro));
+    }
   }
 
   Future<void> _abrirCadastro() async {
@@ -161,16 +183,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: _emailController,
                       decoration: const InputDecoration(labelText: 'E-mail'),
                       keyboardType: TextInputType.emailAddress,
-                      validator: (valor) => (valor == null || !valor.contains('@'))
-                          ? 'Informe um e-mail válido'
-                          : null,
+                      validator: validarEmail,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _senhaController,
                       decoration: const InputDecoration(labelText: 'Senha'),
                       obscureText: true,
-                      validator: (valor) => (valor == null || valor.length < 4)
+                      validator: (valor) => (valor == null || valor.isEmpty)
                           ? 'Informe sua senha'
                           : null,
                     ),
@@ -185,6 +205,20 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     ...Perfil.values.map(_opcaoPerfil),
+                    if (_erro != null) ...[
+                      const SizedBox(height: 4),
+                      Text(_erro!,
+                          style: const TextStyle(
+                              color: AppColors.claret, fontSize: 12.5)),
+                      if (_emailNaoVerificado)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: _reenviarVerificacao,
+                            child: const Text('Reenviar e-mail de confirmação'),
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: _abrirRecuperarSenha,
