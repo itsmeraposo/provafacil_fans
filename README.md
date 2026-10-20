@@ -1,53 +1,93 @@
-# ProvaFácil FANS — App Flutter (etapa de navegação)
+# ProvaFácil FANS — App Flutter (Etapa 2)
 
-Este projeto implementa, em Flutter, as telas, os menus e os fluxos de
-navegação definidos nas etapas anteriores do projeto ProvaFácil FANS,
-conforme pedido no enunciado da atividade.
+Aplicativo em **Flutter/Dart** para montar, revisar e imprimir provas da
+Faculdade de Nova Serrana. Funciona no **Android** e no **navegador (web)** e
+conversa por **HTTP** com uma API Node/Express que grava em um banco real
+(**Cloud Firestore**).
 
-## Sobre os perfis de acesso
+- **Servidor publicado:** https://prova-facil-fans.vercel.app
+- **Repositório do servidor:** _(colocar aqui o link do repositório do servidor)_
 
-O enunciado da atividade usa os nomes genéricos **"Cliente"** e **"Usuário"**
-para os perfis de acesso. Este projeto, porém, tem **três perfis reais**,
-definidos nas etapas anteriores do sistema:
+## Perfis de acesso
 
-| Perfil do enunciado | Perfil real do ProvaFácil FANS |
-|---|---|
-| — | **Professor** — cria questões e monta provas |
-| — | **Direção** — revisa e aprova/reprova as provas |
-| — | **Repografia** — imprime as provas aprovadas |
+| Perfil | O que faz |
+| --- | --- |
+| **Professor** | Cria questões e monta provas |
+| **Direção** | Revisa e aprova/reprova as provas |
+| **Repografia** | Imprime as provas aprovadas |
 
-Optamos por manter os três perfis reais (em vez de forçá-los em apenas dois
-grupos "Cliente/Usuário"), pois é o que reflete fielmente o projeto e o
-planejamento das etapas anteriores.
+## Como entrar (modo sem login temporário)
 
-## O que está implementado nesta etapa
+Nesta etapa o login está **desligado**, a pedido do professor: na tela de
+login basta escolher o perfil (Professor, Direção ou Repografia) e entrar,
+sem e-mail nem senha. Os dados são **reais** (vêm e vão para o Firestore pela
+API); só a autenticação foi simplificada.
 
-- Todas as telas previstas: boas-vindas, login, cadastro, recuperar senha, painéis, banco de questões, cadastro/edição
-  de questão, montagem de prova (2 passos), revisão da Direção, impressão da
-  Repografia e perfil.
-- Navegação funcional entre todas as telas (`Navigator`), com botão de voltar
-  operante em todas elas.
-- Menu lateral (Drawer) com itens específicos para cada perfil, incluindo
-  "Sair".
-- Fluxos completos dos três perfis, do login até a ação final de cada um.
-- Transições reais: botões executam ações, más ações atualizam status,
-  telas se abrem/fecham corretamente e não há telas "sem saída".
-- Interface visual consistente (mesma paleta de cores e componentes do
-  protótipo web) entre todas as telas.
+Como funciona: com `loginAtivo = false` em `lib/config.dart`, o app chama
+`POST /api/auth/entrada-direta` com uma chave de teste (`semLoginChave`). O
+servidor só aceita essa rota quando está com `SEM_LOGIN=true` e a mesma chave
+em `SEM_LOGIN_CHAVE`. Para voltar ao login normal: `loginAtivo = true` no app e
+apagar `SEM_LOGIN` no servidor.
 
-## Integração com o servidor
+## Requisitos da prova × onde estão no app
 
-O app conversa com a API do ProvaFácil (Node/Express + Firestore) pelo
-endereço definido em `lib/config.dart` (`apiBaseUrl`). O login usa o cookie de
-sessão do servidor (`provafacil_sessao`), guardado em memória por
-`lib/api.dart`.
+| Requisito | Como foi atendido |
+| --- | --- |
+| Multiplataforma (Android e web) | Mesmo código roda nas duas; a sessão usa `Authorization: Bearer` (funciona no navegador) e o download de DOCX tem caminho próprio para web (`lib/arquivos_salvar_web.dart`) |
+| Flutter e Dart | Todo o app em Dart |
+| Comunicação HTTP | `lib/api.dart` (pacote `http`) fala com a API REST |
+| Acesso a banco de dados | API Node/Express + **Cloud Firestore** (nada de dados fixos no código) |
+| Persistência | Questões, provas e usuários ficam no Firestore; continuam lá depois de fechar e abrir o app |
+| Consulta | Banco de questões e painéis listam dados com `GET /api/questoes` e `GET /api/provas` |
+| Cadastro | Nova questão (`POST /api/questoes`), cadastro de conta e montagem/envio de provas |
+| Atualização da interface | Depois de cadastrar, editar, excluir ou revisar, as telas recarregam os dados do servidor |
+| Validação dos campos | Formulários de questão, cadastro, perfil e login impedem o envio de dados inválidos (`lib/validators.dart`) |
+| Tratamento de erros | Falha de conexão, tempo esgotado e erros da API viram mensagens na tela (`ApiException` em `lib/api.dart`) |
+
+## Como executar
+
+Requisitos: Flutter instalado (`flutter doctor` sem erros).
+
+```bash
+flutter pub get
+
+# Android (emulador ou celular)
+flutter run
+
+# Navegador
+flutter run -d chrome
+```
+
+Se a pasta `web/` não existir no seu clone, crie com
+`flutter create . --platforms=web`.
+
+APK de release:
+
+```bash
+flutter build apk --release
+# saída: build/app/outputs/flutter-apk/app-release.apk
+```
+
+### Endereço do servidor
+
+Definido em `lib/config.dart` (`apiBaseUrl`), já apontando para o servidor
+publicado, então não é preciso subir nenhum servidor local. Para usar um
+servidor local, veja as opções comentadas no próprio arquivo.
+
+No Android, o `AndroidManifest.xml` precisa da permissão de internet:
+
+```xml
+<uses-permission android:name="android.permission.INTERNET"/>
+```
+
+## Integração com a API
 
 | Tela / botão | Endpoint |
 | --- | --- |
-| Entrar | `POST /api/auth/login` |
+| Entrar (acesso direto) | `POST /api/auth/entrada-direta` |
+| Entrar (login normal) | `POST /api/auth/login` |
 | Cadastre-se | `POST /api/auth/registrar` (+ `GET /api/constantes`) |
 | Esqueci minha senha | `POST /api/auth/esqueci-senha` |
-| Reenviar confirmação | `POST /api/auth/reenviar-verificacao` |
 | Sair | `POST /api/auth/logout` |
 | Perfil: salvar / alterar senha / excluir conta | `PUT /api/auth/perfil`, `POST /api/auth/alterar-senha`, `DELETE /api/auth/conta` |
 | Painéis e Banco de Questões | `GET /api/questoes`, `GET /api/provas` |
@@ -56,67 +96,29 @@ sessão do servidor (`provafacil_sessao`), guardado em memória por
 | Gerar PDF / DOCX | `POST /api/provas/gerar-pdf`, `gerar-docx` |
 | Excluir rascunho | `DELETE /api/provas/:id` |
 | Direção: ver PDF / aprovar / reprovar / em análise | `GET /api/provas/:id/previa-pdf`, `PATCH /api/provas/:id/revisao` |
-| Repografia: abrir PDF / marcar e desfazer impressão | `GET /api/provas/:id/previa-pdf`, `PATCH /api/provas/:id/impressao` |
+| Repografia: abrir PDF / marcar impressão | `GET /api/provas/:id/previa-pdf`, `PATCH /api/provas/:id/impressao` |
 
-No Android, o `AndroidManifest.xml` precisa da permissão de internet e, para
-servidor `http://` (desenvolvimento), de tráfego sem criptografia:
-
-```xml
-<uses-permission android:name="android.permission.INTERNET"/>
-<application ... android:usesCleartextTraffic="true">
-```
-
-## Como executar
-
-```bash
-flutter pub get
-flutter run
-```
-
-## Modo sem login (temporário)
-
-A pedido do professor, o login está **desligado** nesta etapa:
-`loginAtivo = false` em `lib/config.dart`. A tela de login vira "Acesso
-direto" (só escolher o perfil) e o app pede a sessão ao servidor em
-`POST /api/auth/entrada-direta`, usando a chave `semLoginChave`. Todo o resto
-(questões, provas, PDF/DOCX) funciona com dados reais. O servidor precisa ter
-`SEM_LOGIN=true` e `SEM_LOGIN_CHAVE` igual a `semLoginChave`. Para religar o
-login: `loginAtivo = true` no app e apagar `SEM_LOGIN` no servidor.
-
-## Login de demonstração
-
-Na tela de login, escolha o perfil desejado em "Entrar como" (Professor,
-Direção ou Repografia) e toque em "Entrar" — e-mail/senha já vêm preenchidos
-apenas para agilizar a demonstração.
+A sessão é um token (JWT) devolvido pelo login, guardado em memória e enviado
+em `Authorization: Bearer <token>` em toda requisição.
 
 ## Estrutura do projeto
 
 ```
 lib/
-  main.dart                 Ponto de entrada
-  theme.dart                 Paleta e tema visual
-  models.dart                 Modelos (Usuario, Questao, Prova, Perfil)
-  config.dart / api.dart / arquivos.dart / validators.dart   Servidor e utilitários
+  main.dart                      Ponto de entrada
+  theme.dart                     Paleta e tema visual
+  models.dart                    Modelos (Usuario, Questao, Prova, Perfil)
+  config.dart                    Endereço do servidor e chave do modo sem login
+  api.dart                       Cliente HTTP, sessão e tratamento de erros
   app_state.dart                 Sessão e dados compartilhados entre telas
-  widgets/
-    app_drawer.dart               Menu lateral (por perfil)
-    common.dart                     Componentes reutilizados
+  arquivos.dart                  Abrir/compartilhar PDF e DOCX
+  arquivos_salvar_io.dart        Android: folha de compartilhamento
+  arquivos_salvar_web.dart       Navegador: download do arquivo
+  validators.dart                Validação dos campos
+  widgets/                       Menu lateral (por perfil) e componentes comuns
   screens/
-    boas_vindas_screen.dart           Tela inicial (leva ao login)
-    login_screen.dart                 Login
-    cadastro_screen.dart              Criar conta
-    recuperar_senha_screen.dart       Recuperar senha
-    perfil_screen.dart                 Perfil (comum aos 3 perfis)
-    professor/
-      painel_professor_screen.dart
-      banco_questoes_screen.dart
-      questao_form_screen.dart
-      montar_prova_screen.dart          (passo 1/2)
-      revisao_prova_screen.dart          (passo 2/2)
-    direcao/
-      painel_direcao_screen.dart
-      revisao_direcao_screen.dart
-    repografia/
-      painel_repografia_screen.dart
-      detalhe_impressao_screen.dart
+    boas_vindas, login, cadastro, recuperar_senha, perfil
+    professor/                   Painel, banco de questões, formulário de questão, montagem de prova
+    direcao/                     Painel e revisão de provas
+    repografia/                  Painel e impressão
 ```

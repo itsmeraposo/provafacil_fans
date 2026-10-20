@@ -22,15 +22,15 @@ class ApiException implements Exception {
 
 /// Cliente HTTP do servidor.
 ///
-/// O backend autentica por um cookie de sessão (JWT) chamado
-/// `provafacil_sessao`. O navegador guarda esse cookie sozinho; no app ele é
-/// lido do cabeçalho `set-cookie` e reenviado em toda requisição.
+/// O backend devolve um token de sessão (JWT) no corpo do login, e o app o
+/// reenvia em toda requisição no cabeçalho `Authorization: Bearer <token>`.
+/// Isso funciona igual no Android e no navegador (o navegador não permite
+/// ler `set-cookie` nem enviar o cabeçalho `Cookie` por código).
 class ApiClient {
   ApiClient._();
 
   static final ApiClient instancia = ApiClient._();
 
-  static const String _nomeCookie = 'provafacil_sessao';
   static const Duration _limiteTempo = Duration(seconds: 40);
 
   final http.Client _http = http.Client();
@@ -52,13 +52,18 @@ class ApiClient {
     );
   }
 
-  void _guardarCookie(http.Response resposta) {
-    final bruto = resposta.headers['set-cookie'];
-    if (bruto == null) return;
-    final achado = RegExp('$_nomeCookie=([^;,\\s]*)').firstMatch(bruto);
-    if (achado == null) return;
-    final valor = achado.group(1) ?? '';
-    _sessao = valor.isEmpty ? null : valor;
+  /// Guarda o token devolvido pelo login / entrada direta.
+  void _guardarToken(String caminho, http.Response resposta) {
+    if (caminho != '/api/auth/login' &&
+        caminho != '/api/auth/entrada-direta') {
+      return;
+    }
+    try {
+      final dados = jsonDecode(utf8.decode(resposta.bodyBytes));
+      if (dados is Map<String, dynamic> && dados['token'] is String) {
+        _sessao = dados['token'] as String;
+      }
+    } catch (_) {}
   }
 
   Future<http.Response> _enviar(
@@ -69,7 +74,7 @@ class ApiClient {
   }) async {
     final requisicao = http.Request(metodo, _uri(caminho, consulta));
     requisicao.headers['Accept'] = 'application/json';
-    if (temSessao) requisicao.headers['Cookie'] = '$_nomeCookie=$_sessao';
+    if (temSessao) requisicao.headers['Authorization'] = 'Bearer $_sessao';
     if (corpo != null) {
       requisicao.headers['Content-Type'] = 'application/json; charset=utf-8';
       requisicao.body = jsonEncode(corpo);
@@ -86,8 +91,8 @@ class ApiClient {
       );
     }
 
-    _guardarCookie(resposta);
     if (resposta.statusCode >= 400) throw _erroDe(resposta);
+    _guardarToken(caminho, resposta);
     return resposta;
   }
 

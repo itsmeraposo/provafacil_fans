@@ -1,9 +1,10 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
-import 'package:share_plus/share_plus.dart';
+
+// No Android usa a folha de compartilhamento; no navegador baixa o arquivo.
+import 'arquivos_salvar_io.dart'
+    if (dart.library.js_interop) 'arquivos_salvar_web.dart';
 
 const String mimePdf = 'application/pdf';
 const String mimeDocx =
@@ -25,7 +26,8 @@ class Arquivos {
     await Printing.layoutPdf(name: nome, onLayout: (_) async => bytes);
   }
 
-  /// Abre a folha de compartilhamento do Android (salvar, enviar, etc.).
+  /// Android: folha de compartilhamento (salvar, enviar, etc.). Navegador:
+  /// baixa o arquivo.
   static Future<void> compartilhar(
     Uint8List bytes,
     String nome, {
@@ -35,12 +37,6 @@ class Arquivos {
       await Printing.sharePdf(bytes: bytes, filename: nome);
       return;
     }
-    final pasta = await getTemporaryDirectory();
-    final arquivo = File('${pasta.path}/$nome');
-    await arquivo.writeAsBytes(bytes, flush: true);
-    await Share.shareXFiles(
-      [XFile(arquivo.path, mimeType: mime)],
-      subject: nome,
-    );
+    await salvarOuCompartilhar(bytes, nome, mime);
   }
 }
