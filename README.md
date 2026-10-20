@@ -73,6 +73,16 @@ flutter pub get
 flutter run
 ```
 
+## Modo sem login (temporário)
+
+A pedido do professor, o login está **desligado** nesta etapa:
+`loginAtivo = false` em `lib/config.dart`. A tela de login vira "Acesso
+direto" (só escolher o perfil) e o app pede a sessão ao servidor em
+`POST /api/auth/entrada-direta`, usando a chave `semLoginChave`. Todo o resto
+(questões, provas, PDF/DOCX) funciona com dados reais. O servidor precisa ter
+`SEM_LOGIN=true` e `SEM_LOGIN_CHAVE` igual a `semLoginChave`. Para religar o
+login: `loginAtivo = true` no app e apagar `SEM_LOGIN` no servidor.
+
 ## Login de demonstração
 
 Na tela de login, escolha o perfil desejado em "Entrar como" (Professor,

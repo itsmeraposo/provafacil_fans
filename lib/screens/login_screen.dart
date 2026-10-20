@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_state.dart';
 import '../api.dart';
+import '../config.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../validators.dart';
@@ -74,7 +75,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
     setState(() => _carregando = false);
+    _abrirPainel();
+  }
 
+  /// Abre o painel do perfil da sessão atual.
+  void _abrirPainel() {
     final destino = switch (AppState.instancia.usuarioAtual!.perfil) {
       Perfil.professor => const PainelProfessorScreen(),
       Perfil.direcao => const PainelDirecaoScreen(),
@@ -84,6 +89,128 @@ class _LoginScreenState extends State<LoginScreen> {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => destino),
       (rota) => false,
+    );
+  }
+
+  /// MODO SEM LOGIN (`loginAtivo = false`): entra direto no perfil escolhido.
+  Future<void> _entrarDireto(Perfil perfil) async {
+    if (_carregando) return;
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    try {
+      await AppState.instancia.entrarSemLogin(perfil);
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      setState(() {
+        _carregando = false;
+        _erro = erro.mensagem;
+      });
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _carregando = false;
+        _erro = 'Não foi possível entrar. Tente novamente.';
+      });
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _carregando = false);
+    _abrirPainel();
+  }
+
+  Widget _telaAcessoDireto() {
+    return Scaffold(
+      appBar: Navigator.of(context).canPop()
+          ? AppBar(
+              backgroundColor: AppColors.paper,
+              scrolledUnderElevation: 0,
+            )
+          : null,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Acesso direto',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'O login está desligado nesta etapa. Escolha o perfil '
+                    'para entrar, sem e-mail nem senha.',
+                    style: TextStyle(color: AppColors.inkMuted, fontSize: 13),
+                  ),
+                  const SizedBox(height: 20),
+                  if (_erro != null) ...[
+                    Text(_erro!,
+                        style: const TextStyle(
+                            color: AppColors.claret, fontSize: 12.5)),
+                    const SizedBox(height: 10),
+                  ],
+                  if (_carregando)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 10),
+                      child: LinearProgressIndicator(),
+                    ),
+                  for (final perfil in Perfil.values)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => _entrarDireto(perfil),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: corDoPerfil(perfil.chave), width: 1.2),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Entrar como ${perfil.rotulo}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                        color: corDoPerfil(perfil.chave),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      perfil.descricao,
+                                      style: const TextStyle(
+                                          color: AppColors.inkMuted,
+                                          fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right,
+                                  color: AppColors.inkFaint),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -117,6 +244,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!loginAtivo) return _telaAcessoDireto();
     return Scaffold(
       // Mostra a seta de voltar (para a tela de boas-vindas) só quando há
       // uma tela anterior; após "Sair" o login abre sem ela.

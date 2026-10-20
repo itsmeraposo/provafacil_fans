@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'config.dart';
 import 'models.dart';
 
 /// Lista usada só enquanto o servidor ainda não respondeu `/api/constantes`.
@@ -63,6 +64,19 @@ class AppState extends ChangeNotifier {
     final resposta = await _api.post('/api/auth/login', {
       'email': email.trim(),
       'senha': senha,
+      'perfil': perfil.chave,
+    });
+    usuarioAtual = Usuario.fromJson(resposta['usuario'] as Map<String, dynamic>);
+    notifyListeners();
+    await carregarDados();
+  }
+
+  /// MODO SEM LOGIN (`loginAtivo = false`): pede ao servidor a sessão do
+  /// perfil escolhido, sem e-mail nem senha. O servidor precisa estar com
+  /// `SEM_LOGIN=true` e a mesma chave de `semLoginChave` (lib/config.dart).
+  Future<void> entrarSemLogin(Perfil perfil) async {
+    final resposta = await _api.post('/api/auth/entrada-direta', {
+      'chave': semLoginChave,
       'perfil': perfil.chave,
     });
     usuarioAtual = Usuario.fromJson(resposta['usuario'] as Map<String, dynamic>);

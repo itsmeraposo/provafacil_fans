@@ -12,3 +12,17 @@
 ///
 /// Sem barra no final.
 const String apiBaseUrl = 'https://prova-facil-fans.vercel.app';
+
+/// Chave do login.
+///
+/// `false` = MODO SEM LOGIN (temporário, a pedido do professor): a tela de
+/// login mostra só a escolha do perfil e entra direto, sem e-mail nem senha.
+/// O servidor precisa estar com `SEM_LOGIN=true` e `SEM_LOGIN_CHAVE` igual a
+/// `semLoginChave` abaixo (variáveis de ambiente na Vercel).
+///
+/// `true` = login normal no servidor, como antes.
+const bool loginAtivo = false;
+
+/// Mesma chave configurada em `SEM_LOGIN_CHAVE` no servidor. Só vale no modo
+/// sem login; é uma chave de teste, não publique o app com ela.
+const String semLoginChave = '315dcf8e98fb0e80faca8d187e94fe9044ecf5b9fadc00d1';
