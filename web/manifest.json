@@ -1,11 +1,11 @@
 {
-    "name": "provafacil_fans",
-    "short_name": "provafacil_fans",
+    "name": "ProvaFácil FANS",
+    "short_name": "ProvaFácil",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "ProvaFácil FANS — montagem, revisão e impressão de provas.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

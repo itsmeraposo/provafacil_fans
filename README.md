@@ -6,7 +6,7 @@ conversa por **HTTP** com uma API Node/Express que grava em um banco real
 (**Cloud Firestore**).
 
 - **Servidor publicado:** https://prova-facil-fans.vercel.app
-- **Repositório do servidor:** _(colocar aqui o link do repositório do servidor)_
+- **Repositório do servidor:** https://github.com/joaopcordeirons/ProvaFacilFANS
 
 ## Perfis de acesso
 
