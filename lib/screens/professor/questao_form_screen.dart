@@ -73,7 +73,7 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
 
     setState(() => _salvando = true);
     try {
-      await AppState.instancia.salvarQuestao(
+      final noServidor = await AppState.instancia.salvarQuestao(
         id: widget.questao?.id,
         texto: _textoController.text.trim(),
         tipo: _tipo,
@@ -84,7 +84,13 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
       );
       if (!mounted) return;
       mostrarMensagem(
-          context, _editando ? 'Questão atualizada.' : 'Questão adicionada ao banco.');
+          context,
+          !noServidor
+              ? 'Sem conexão: questão salva no aparelho. Será enviada quando '
+                  'houver conexão.'
+              : _editando
+                  ? 'Questão atualizada.'
+                  : 'Questão adicionada ao banco.');
       Navigator.of(context).pop();
     } catch (erro) {
       if (!mounted) return;

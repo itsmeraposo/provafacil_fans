@@ -2,13 +2,17 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_state.dart';
+import 'preferencias.dart';
 import 'screens/boas_vindas_screen.dart';
 import 'screens/login_screen.dart';
 import 'theme.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Preferencias.carregar();
+
   // Se o servidor derrubar a sessão (expirou), volta para o login.
   ApiClient.instancia.aoSessaoExpirada = () {
     AppState.instancia.sessaoExpirada();
@@ -36,11 +40,18 @@ class ProvaFacilApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       builder: (context, child) {
-        final escala = MediaQuery.textScalerOf(context)
-            .clamp(minScaleFactor: 1.0, maxScaleFactor: 1.25);
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: escala),
-          child: child!,
+        return ValueListenableBuilder<bool>(
+          valueListenable: Preferencias.textoGrande,
+          builder: (context, grande, _) {
+            final escala = grande
+                ? const TextScaler.linear(1.25)
+                : MediaQuery.textScalerOf(context)
+                    .clamp(minScaleFactor: 1.0, maxScaleFactor: 1.25);
+            return MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: escala),
+              child: child!,
+            );
+          },
         );
       },
       home: const BoasVindasScreen(),

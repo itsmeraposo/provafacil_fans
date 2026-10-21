@@ -34,6 +34,13 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+
+            // O R8 (que encolhe o código no APK release) removia um método do
+            // plugin shared_preferences, chamado via JNI, e o app falhava com
+            // NoSuchMethodError ao gravar no aparelho. Sem o encolhimento, o
+            // plugin funciona igual ao modo debug.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

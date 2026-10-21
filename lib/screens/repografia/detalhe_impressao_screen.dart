@@ -30,8 +30,9 @@ class _DetalheImpressaoScreenState extends State<DetalheImpressaoScreen> {
     try {
       final bytes =
           await AppState.instancia.baixarPreviaPdf(widget.prova.id);
-      await Arquivos.visualizarPdf(
-          bytes, Arquivos.nome(widget.prova.titulo, 'pdf'));
+      if (!mounted) return;
+      await Arquivos.abrirPdfNoApp(
+          context, bytes, Arquivos.nome(widget.prova.titulo, 'pdf'));
     } catch (erro) {
       if (mounted) mostrarMensagem(context, textoDoErro(erro));
     } finally {

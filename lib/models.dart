@@ -89,6 +89,7 @@ class Questao {
     this.tipo = 'dissertativa', // 'dissertativa' | 'multipla_escolha'
     required this.valor,
     this.usadaEm = 0,
+    this.pendente = false,
   });
 
   factory Questao.fromJson(Map<String, dynamic> json) {
@@ -103,8 +104,22 @@ class Questao {
           : 'dissertativa',
       valor: double.tryParse('${json['valor']}') ?? 1.0,
       usadaEm: int.tryParse('${json['usadaEm']}') ?? 0,
+      pendente: json['pendente'] == true,
     );
   }
+
+  /// Usado para guardar a cópia local da lista (ver lib/preferencias.dart).
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'texto': texto,
+        'assunto': assunto,
+        'curso': curso,
+        'periodo': periodo,
+        'tipo': tipo,
+        'valor': valor,
+        'usadaEm': usadaEm,
+        'pendente': pendente,
+      };
 
   final String id;
   String texto;
@@ -114,6 +129,10 @@ class Questao {
   String tipo;
   double valor;
   int usadaEm;
+
+  /// Cadastrada sem conexão: está só no aparelho, esperando para ser enviada
+  /// ao servidor.
+  final bool pendente;
 
   String get periodoRotulo =>
       periodo == null ? 'Sem período' : '${periodo}º período';

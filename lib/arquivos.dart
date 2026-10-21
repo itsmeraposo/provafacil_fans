@@ -1,6 +1,10 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
+
+import 'screens/pdf_visualizador_screen.dart';
 
 // No Android usa a folha de compartilhamento; no navegador baixa o arquivo.
 import 'arquivos_salvar_io.dart'
@@ -19,6 +23,24 @@ class Arquivos {
         .trim()
         .replaceAll(RegExp(r'\s+'), '_');
     return '${limpo.isEmpty ? 'prova' : limpo}.$extensao';
+  }
+
+  /// Android: abre o PDF numa tela do próprio app (com imprimir e
+  /// compartilhar). Navegador: usa a visualização do próprio navegador.
+  static Future<void> abrirPdfNoApp(
+    BuildContext context,
+    Uint8List bytes,
+    String nome,
+  ) async {
+    if (kIsWeb) {
+      await visualizarPdf(bytes, nome);
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PdfVisualizadorScreen(bytes: bytes, nome: nome),
+      ),
+    );
   }
 
   /// Mostra o PDF na tela com as opções de imprimir e salvar do sistema.

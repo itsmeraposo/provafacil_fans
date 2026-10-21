@@ -193,11 +193,19 @@ class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => QuestaoFormScreen(questao: questao),
-          ),
-        ),
+        onTap: () {
+          if (questao.pendente) {
+            mostrarMensagem(context,
+                'Esta questão ainda não foi enviada. Conecte-se à internet e '
+                'atualize a lista para poder editá-la.');
+            return;
+          }
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => QuestaoFormScreen(questao: questao),
+            ),
+          );
+        },
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -211,6 +219,8 @@ class _BancoQuestoesScreenState extends State<BancoQuestoesScreen> {
                       spacing: 6,
                       runSpacing: 4,
                       children: [
+                        if (questao.pendente)
+                          _selo('Pendente de envio', AppColors.amber),
                         _selo(questao.assunto, AppColors.accent),
                         _selo(questao.periodoRotulo, AppColors.inkMuted),
                         _selo(questao.tipoRotulo, AppColors.inkMuted),

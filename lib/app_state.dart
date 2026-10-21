@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'api.dart';
 import 'config.dart';
 import 'models.dart';
+import 'preferencias.dart';
 
 /// Lista usada só enquanto o servidor ainda não respondeu `/api/constantes`.
 const List<String> _cursosPadrao = [
@@ -37,6 +38,10 @@ class AppState extends ChangeNotifier {
   List<String> cursosDisponiveis = List.of(_cursosPadrao);
   bool carregando = false;
   String? erroCarregamento;
+
+  /// Verdadeiro quando a lista de questões na tela veio da cópia guardada no
+  /// aparelho (servidor ou internet indisponível), e não do servidor.
+  bool usandoCache = false;
 
   bool get logado => usuarioAtual != null;
 
@@ -150,14 +155,32 @@ class AppState extends ChangeNotifier {
 
     carregando = true;
     erroCarregamento = null;
+    usandoCache = false;
     notifyListeners();
 
     try {
       if (usuario.perfil != Perfil.repografia) {
-        final respostaQuestoes =
-            await _api.get('/api/questoes', consulta: {'limite': '100'});
-        questoes =
-            _lista(respostaQuestoes['questoes']).map(Questao.fromJson).toList();
+        // Primeiro envia o que foi cadastrado sem conexão (se houver).
+        await sincronizarPendentes();
+        try {
+          final respostaQuestoes =
+              await _api.get('/api/questoes', consulta: {'limite': '100'});
+          questoes = _lista(respostaQuestoes['questoes'])
+              .map(Questao.fromJson)
+              .toList();
+          await Preferencias.salvarQuestoesCache(usuario.id, questoes);
+        } on ApiException catch (erro) {
+          // Sem conexão (status nulo) ou erro do servidor (5xx): tenta a
+          // última lista guardada. Outros erros (ex.: sessão expirada) seguem
+          // o caminho normal.
+          final semServico = erro.status == null || erro.status! >= 500;
+          final guardadas =
+              semServico ? await Preferencias.lerQuestoesCache(usuario.id) : null;
+          if (guardadas == null) rethrow;
+          questoes = guardadas;
+          usandoCache = true;
+        }
+        await _juntarPendentes(usuario.id);
       }
       final respostaProvas =
           await _api.get('/api/provas', consulta: {'limite': '50'});
@@ -168,6 +191,11 @@ class AppState extends ChangeNotifier {
       erroCarregamento = 'Falha ao carregar os dados.';
     }
 
+    if (usandoCache) {
+      erroCarregamento = 'Sem conexão com o servidor. Mostrando a última '
+          'lista de questões salva neste aparelho.';
+    }
+
     carregando = false;
     notifyListeners();
   }
@@ -176,7 +204,86 @@ class AppState extends ChangeNotifier {
     final resposta =
         await _api.get('/api/questoes', consulta: {'limite': '100'});
     questoes = _lista(resposta['questoes']).map(Questao.fromJson).toList();
+    usandoCache = false;
+    final usuario = usuarioAtual;
+    if (usuario != null) {
+      await Preferencias.salvarQuestoesCache(usuario.id, questoes);
+      await _juntarPendentes(usuario.id);
+    }
     notifyListeners();
+  }
+
+  /* --------------------------- cadastro sem conexão (pendentes + envio) */
+
+  /// Questões prontas no servidor (sem as pendentes), usadas para montar prova.
+  List<Questao> get questoesEnviadas =>
+      questoes.where((q) => !q.pendente).toList();
+
+  /// Põe as questões pendentes (só no aparelho) no topo da lista.
+  Future<void> _juntarPendentes(String usuarioId) async {
+    final pendentes = await Preferencias.lerPendentes(usuarioId);
+    if (pendentes.isEmpty) return;
+    questoes = [...pendentes.reversed, ...questoes];
+  }
+
+  Future<void> _guardarPendente(Map<String, dynamic> corpo) async {
+    final usuario = usuarioAtual;
+    if (usuario == null) return;
+    final pendente = Questao(
+      id: 'pendente-${DateTime.now().microsecondsSinceEpoch}',
+      texto: corpo['texto'] as String,
+      tipo: corpo['tipo'] as String,
+      assunto: corpo['assunto'] as String,
+      curso: corpo['curso'] as String,
+      periodo: corpo['periodo'] as int,
+      valor: corpo['valor'] as double,
+      pendente: true,
+    );
+    final lista = await Preferencias.lerPendentes(usuario.id);
+    lista.add(pendente);
+    await Preferencias.salvarPendentes(usuario.id, lista);
+    questoes = [pendente, ...questoes];
+    notifyListeners();
+  }
+
+  /// Envia ao servidor as questões cadastradas sem conexão. As que não
+  /// conseguirem seguir (sem internet, servidor fora, sessão) continuam
+  /// guardadas para a próxima tentativa. Devolve quantas foram enviadas.
+  Future<int> sincronizarPendentes() async {
+    final usuario = usuarioAtual;
+    if (usuario == null) return 0;
+    final pendentes = await Preferencias.lerPendentes(usuario.id);
+    if (pendentes.isEmpty) return 0;
+
+    final restantes = <Questao>[];
+    var enviadas = 0;
+    for (var i = 0; i < pendentes.length; i++) {
+      final q = pendentes[i];
+      try {
+        await _api.post('/api/questoes', {
+          'texto': q.texto,
+          'tipo': q.tipo,
+          'assunto': q.assunto,
+          'curso': q.curso,
+          'periodo': q.periodo,
+          'valor': q.valor,
+        });
+        enviadas++;
+      } on ApiException catch (erro) {
+        final status = erro.status;
+        final tentarDepois =
+            status == null || status >= 500 || status == 401 || status == 403;
+        if (tentarDepois) {
+          // Guarda esta e as seguintes e para por aqui.
+          restantes.addAll(pendentes.sublist(i));
+          break;
+        }
+        // Rejeitada pelo servidor (ex.: dados inválidos): não adianta
+        // tentar de novo, então descarta.
+      }
+    }
+    await Preferencias.salvarPendentes(usuario.id, restantes);
+    return enviadas;
   }
 
   Future<void> _recarregarProvas() async {
@@ -187,7 +294,10 @@ class AppState extends ChangeNotifier {
 
   /* -------------------------------------------------------- questões */
 
-  Future<void> salvarQuestao({
+  /// Devolve `true` se a questão já foi para o servidor e `false` se foi
+  /// guardada só no aparelho (cadastro novo sem conexão), para ser enviada
+  /// depois.
+  Future<bool> salvarQuestao({
     String? id,
     required String texto,
     required String tipo,
@@ -205,11 +315,20 @@ class AppState extends ChangeNotifier {
       'valor': valor,
     };
     if (id == null) {
-      await _api.post('/api/questoes', corpo);
+      try {
+        await _api.post('/api/questoes', corpo);
+      } on ApiException catch (erro) {
+        // Erro do servidor (validação etc.) segue como erro. Sem conexão
+        // (status nulo): guarda no aparelho para enviar quando voltar.
+        if (erro.status != null) rethrow;
+        await _guardarPendente(corpo);
+        return false;
+      }
     } else {
       await _api.put('/api/questoes/$id', corpo);
     }
     await _recarregarQuestoes();
+    return true;
   }
 
   Future<void> removerQuestao(String id) async {

@@ -166,11 +166,12 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
       final prova = _provaAtual();
       final bytes = await AppState.instancia.gerarArquivo(prova, formato);
       final nome = Arquivos.nome(prova.titulo, formato);
-      await Arquivos.compartilhar(
-        bytes,
-        nome,
-        mime: formato == 'pdf' ? mimePdf : mimeDocx,
-      );
+      if (formato == 'pdf') {
+        if (!mounted) return;
+        await Arquivos.abrirPdfNoApp(context, bytes, nome);
+      } else {
+        await Arquivos.compartilhar(bytes, nome, mime: mimeDocx);
+      }
     } catch (erro) {
       if (mounted) mostrarMensagem(context, textoDoErro(erro));
     } finally {

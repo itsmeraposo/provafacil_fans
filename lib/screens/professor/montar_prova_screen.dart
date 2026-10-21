@@ -23,7 +23,7 @@ class _MontarProvaScreenState extends State<MontarProvaScreen> {
   final Set<String> _selecionadas = {};
 
   double get _pontosSelecionados {
-    final questoes = AppState.instancia.questoes;
+    final questoes = AppState.instancia.questoesEnviadas;
     return questoes
         .where((q) => _selecionadas.contains(q.id))
         .fold<double>(0, (soma, q) => soma + q.valor);
@@ -58,7 +58,7 @@ class _MontarProvaScreenState extends State<MontarProvaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final questoes = AppState.instancia.questoes;
+    final questoes = AppState.instancia.questoesEnviadas;
     final pontos = _pontosSelecionados;
     final faltam = (10 - pontos).clamp(0, 10);
 
