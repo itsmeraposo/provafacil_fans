@@ -47,6 +47,7 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
   late String _curso;
   late List<Questao> _questoes;
   late String _provaId;
+  final _formKey = GlobalKey<FormState>();
   bool _ocupado = false;
 
   bool get _travada => widget.prova.status != StatusProva.rascunho;
@@ -121,8 +122,39 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
     return false;
   }
 
+  /// Confere as questões e os campos do cabeçalho antes de salvar, enviar ou
+  /// gerar o arquivo. Provas somente para leitura não são validadas.
+  bool _podeContinuar() {
+    if (!_temQuestoes()) return false;
+    if (_travada) return true;
+    if (_formKey.currentState?.validate() ?? true) return true;
+    mostrarMensagem(context, 'Corrija os campos destacados no cabeçalho.');
+    return false;
+  }
+
+  String? _obrigatorio(String? valor) =>
+      (valor == null || valor.trim().isEmpty) ? 'Obrigatório' : null;
+
+  String? _validarPeriodo(String? valor) {
+    final texto = (valor ?? '').trim();
+    if (texto.isEmpty) return 'Obrigatório';
+    final numero = int.tryParse(texto);
+    if (numero == null) return 'Digite um número';
+    if (numero < 1 || numero > 10) return 'Entre 1 e 10';
+    return null;
+  }
+
+  String? _validarValor(String? valor) {
+    final texto = (valor ?? '').trim().replaceAll(',', '.');
+    if (texto.isEmpty) return 'Obrigatório';
+    final numero = double.tryParse(texto);
+    if (numero == null) return 'Digite um número';
+    if (numero <= 0 || numero > 100) return 'Entre 0,1 e 100';
+    return null;
+  }
+
   Future<void> _salvarRascunho() async {
-    if (_ocupado || !_temQuestoes()) return;
+    if (_ocupado || !_podeContinuar()) return;
     setState(() => _ocupado = true);
     try {
       final salva = await AppState.instancia.salvarRascunho(_provaAtual());
@@ -136,7 +168,7 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
   }
 
   Future<void> _enviarParaCoordenador() async {
-    if (_ocupado || !_temQuestoes()) return;
+    if (_ocupado || !_podeContinuar()) return;
     setState(() => _ocupado = true);
     try {
       await AppState.instancia.enviarParaCoordenador(_provaAtual());
@@ -154,7 +186,7 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
   }
 
   Future<void> _gerar(String formato) async {
-    if (_ocupado || !_temQuestoes()) return;
+    if (_ocupado || !_podeContinuar()) return;
     setState(() => _ocupado = true);
     try {
       // Prova nova: salva antes como rascunho, para o servidor não criar
@@ -318,11 +350,14 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Column(
+        child: Form(
+          key: _formKey,
+          child: Column(
           children: [
-            TextField(
+            TextFormField(
               controller: _tituloController,
               enabled: !_travada,
+              validator: _obrigatorio,
               decoration: const InputDecoration(labelText: 'Avaliação de'),
             ),
             const SizedBox(height: 12),
@@ -342,9 +377,10 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
             Row(
               children: [
                 Expanded(
-                  child: TextField(
+                  child: TextFormField(
                     controller: _periodoController,
                     enabled: !_travada,
+                    validator: _validarPeriodo,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: 'Período'),
                   ),
@@ -363,10 +399,12 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
             Row(
               children: [
                 Expanded(
-                  child: TextField(
+                  child: TextFormField(
                     controller: _dataController,
                     enabled: !_travada,
                     readOnly: true,
+                    validator: (valor) =>
+                        _obrigatorio(valor) == null ? null : 'Escolha a data',
                     decoration: const InputDecoration(
                       labelText: 'Data',
                       suffixIcon: Icon(Icons.calendar_today_outlined, size: 16),
@@ -391,9 +429,12 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: TextField(
+                  child: TextFormField(
                     controller: _valorController,
                     enabled: !_travada,
+                    validator: _validarValor,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     decoration:
                         const InputDecoration(labelText: 'Valor da prova'),
                   ),
@@ -401,9 +442,10 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            TextField(
+            TextFormField(
               controller: _professorController,
               enabled: !_travada,
+              validator: _obrigatorio,
               decoration: const InputDecoration(labelText: 'Professor(a)'),
             ),
             const SizedBox(height: 12),
@@ -418,6 +460,7 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
