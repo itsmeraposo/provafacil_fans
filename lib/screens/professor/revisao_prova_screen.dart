@@ -512,6 +512,10 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
                               firstDate: DateTime(2024),
                               lastDate: DateTime(2035),
                               initialDate: DateTime.now(),
+                              locale: const Locale('pt', 'BR'),
+                              helpText: 'Selecione a data',
+                              cancelText: 'Cancelar',
+                              confirmText: 'OK',
                             );
                             if (selecionada != null) {
                               _dataController.text =
