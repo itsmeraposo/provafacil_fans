@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../api.dart';
 import '../../app_state.dart';
 import '../../arquivos.dart';
 import '../../models.dart';
+import '../../preferencias.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
 import '../professor/painel_professor_screen.dart';
@@ -69,7 +71,12 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
   @override
   void initState() {
     super.initState();
-    final prova = widget.prova;
+    // Prova do servidor com alterações guardadas no aparelho (feitas sem
+    // conexão): mostra a versão editada.
+    final prova = (widget.provaNova
+            ? null
+            : AppState.instancia.abrirEdicaoLocal(widget.prova.id)) ??
+        widget.prova;
     _provaId = widget.provaNova ? '' : prova.id;
     _tituloController = TextEditingController(text: prova.titulo);
     _periodoController = TextEditingController(text: prova.periodo);
@@ -84,10 +91,14 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
     );
     _curso = prova.curso.isNotEmpty ? prova.curso : _cursosOpcoes.first;
     _questoes = List.of(prova.questoes);
+    AppState.instancia.revisaoAberta();
+    // Prova nova: já guarda no aparelho desde a primeira tela de revisão.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _guardarLocal());
   }
 
   @override
   void dispose() {
+    AppState.instancia.revisaoFechada();
     _tituloController.dispose();
     _periodoController.dispose();
     _etapaController.dispose();
@@ -120,6 +131,51 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
     if (_questoes.isNotEmpty) return true;
     mostrarMensagem(context, 'Adicione ao menos uma questão antes de continuar.');
     return false;
+  }
+
+  /// Prova nova que ainda não foi para o servidor: guarda o que está na tela
+  /// no aparelho, para o professor continuar depois de fechar o app.
+  void _guardarLocal() {
+    final usuario = AppState.instancia.usuarioAtual;
+    if (usuario == null || !widget.provaNova || _travada) return;
+    if (_provaId.isNotEmpty) return;
+    Preferencias.salvarRascunhoLocal(usuario.id, _provaAtual());
+  }
+
+  /// Sem conexão, numa prova que ainda pode ser editada (nova ou rascunho do
+  /// servidor): dá para guardar o pedido no aparelho.
+  bool _semConexaoGuardavel(Object erro) =>
+      erro is ApiException && erro.status == null && !_travada;
+
+  /// Guarda a prova e o que o professor pediu (enviar, PDF ou DOCX) no
+  /// aparelho e volta ao painel. Com a tela fechada, o app faz o pedido
+  /// sozinho quando a internet voltar.
+  Future<void> _guardarParaDepois(String acao, String mensagem) async {
+    final usuario = AppState.instancia.usuarioAtual;
+    if (_provaId.isEmpty) {
+      // Prova nova: um rascunho local por usuário.
+      if (usuario != null) {
+        await Preferencias.salvarRascunhoLocal(usuario.id, _provaAtual());
+        await Preferencias.salvarAcaoPendente(usuario.id, acao);
+      }
+    } else {
+      // Prova que já está no servidor: guarda a edição ligada ao id dela.
+      await AppState.instancia.guardarEdicaoLocal(_provaAtual(), acao);
+    }
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const PainelProfessorScreen()),
+      (rota) => false,
+    );
+    mostrarMensagem(context, mensagem);
+  }
+
+  /// A prova já está no servidor: a cópia local não é mais necessária.
+  void _limparLocal() {
+    final usuario = AppState.instancia.usuarioAtual;
+    if (usuario == null) return;
+    if (widget.provaNova) Preferencias.apagarRascunhoLocal(usuario.id);
+    if (_provaId.isNotEmpty) AppState.instancia.descartarEdicaoLocal(_provaId);
   }
 
   /// Confere as questões e os campos do cabeçalho antes de salvar, enviar ou
@@ -159,9 +215,23 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
     try {
       final salva = await AppState.instancia.salvarRascunho(_provaAtual());
       _provaId = salva.id;
+      _limparLocal();
       if (mounted) mostrarMensagem(context, 'Rascunho salvo.');
     } catch (erro) {
-      if (mounted) mostrarMensagem(context, textoDoErro(erro));
+      if (!mounted) return;
+      // Sem conexão (status nulo): a prova ou as alterações ficam no
+      // aparelho e pode ser retomado e enviado depois.
+      if (_semConexaoGuardavel(erro)) {
+        // Sai da tela: com ela fechada, o app envia sozinho quando a
+        // internet voltar.
+        await _guardarParaDepois(
+          'rascunho',
+          'Sem conexão: alterações salvas neste aparelho. Serão enviadas '
+          'automaticamente quando a internet voltar.',
+        );
+      } else {
+        mostrarMensagem(context, textoDoErro(erro));
+      }
     } finally {
       if (mounted) setState(() => _ocupado = false);
     }
@@ -172,6 +242,7 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
     setState(() => _ocupado = true);
     try {
       await AppState.instancia.enviarParaCoordenador(_provaAtual());
+      _limparLocal();
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const PainelProfessorScreen()),
@@ -180,6 +251,14 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
       mostrarMensagem(context, 'Prova enviada para a Direção revisar.');
     } catch (erro) {
       if (!mounted) return;
+      if (_semConexaoGuardavel(erro)) {
+        await _guardarParaDepois(
+          'enviar',
+          'Sem conexão: prova guardada neste aparelho. Será enviada ao '
+          'coordenador automaticamente quando a internet voltar.',
+        );
+        return;
+      }
       setState(() => _ocupado = false);
       mostrarMensagem(context, textoDoErro(erro));
     }
@@ -194,9 +273,11 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
       if (_provaId.isEmpty && !_travada) {
         final salva = await AppState.instancia.salvarRascunho(_provaAtual());
         _provaId = salva.id;
+        _limparLocal();
       }
       final prova = _provaAtual();
       final bytes = await AppState.instancia.gerarArquivo(prova, formato);
+      _limparLocal();
       final nome = Arquivos.nome(prova.titulo, formato);
       if (formato == 'pdf') {
         if (!mounted) return;
@@ -205,7 +286,17 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
         await Arquivos.compartilhar(bytes, nome, mime: mimeDocx);
       }
     } catch (erro) {
-      if (mounted) mostrarMensagem(context, textoDoErro(erro));
+      if (!mounted) return;
+      if (_semConexaoGuardavel(erro)) {
+        await _guardarParaDepois(
+          formato,
+          'Sem conexão: prova guardada neste aparelho. O '
+          '${formato.toUpperCase()} será gerado automaticamente quando a '
+          'internet voltar, e você será avisado para abrir.',
+        );
+      } else {
+        mostrarMensagem(context, textoDoErro(erro));
+      }
     } finally {
       if (mounted) setState(() => _ocupado = false);
     }
@@ -253,10 +344,12 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
       final item = _questoes.removeAt(indice);
       _questoes.insert(destino, item);
     });
+    _guardarLocal();
   }
 
   void _remover(int indice) {
     setState(() => _questoes.removeAt(indice));
+    _guardarLocal();
   }
 
   @override
@@ -284,6 +377,7 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _avisoFila(),
                   if (_decidida) _avisoTravada(),
                   if (widget.prova.status == StatusProva.emRevisao)
                     _avisoStatus(
@@ -352,6 +446,7 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
         padding: const EdgeInsets.all(14),
         child: Form(
           key: _formKey,
+          onChanged: _guardarLocal,
           child: Column(
           children: [
             TextFormField(
@@ -559,6 +654,67 @@ class _RevisaoProvaScreenState extends State<RevisaoProvaScreen> {
         ],
       ),
     );
+  }
+
+  /// Pedido feito sem conexão (enviar, PDF, DOCX) que ainda não foi cumprido.
+  /// Continua valendo mesmo se o professor reabrir a prova; aqui ele pode
+  /// cancelar.
+  Widget _avisoFila() {
+    return ValueListenableBuilder<String?>(
+      valueListenable: Preferencias.acaoRascunhoLocal,
+      builder: (context, acaoNova, _) {
+        final acao = _provaId.isEmpty
+            ? (widget.provaNova ? acaoNova : null)
+            : AppState.instancia.acoesEdicoes[_provaId];
+        final texto = switch (acao) {
+          'enviar' => 'será enviada ao coordenador',
+          'pdf' => 'o PDF será gerado',
+          'docx' => 'o DOCX será gerado',
+          _ => null,
+        };
+        if (texto == null || _travada) return const SizedBox.shrink();
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          decoration: BoxDecoration(
+            color: AppColors.claret.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.claret.withOpacity(0.3)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.cloud_off, size: 18, color: AppColors.claret),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Pedido guardado neste aparelho: $texto quando a internet '
+                  'voltar.',
+                  style: const TextStyle(
+                      fontSize: 12.5, color: AppColors.claret),
+                ),
+              ),
+              TextButton(
+                onPressed: _cancelarFila,
+                child: const Text('Cancelar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _cancelarFila() async {
+    final usuario = AppState.instancia.usuarioAtual;
+    if (_provaId.isEmpty) {
+      if (usuario != null) await Preferencias.apagarAcaoPendente(usuario.id);
+    } else {
+      await AppState.instancia.guardarEdicaoLocal(_provaAtual(), 'rascunho');
+    }
+    if (mounted) {
+      setState(() {});
+      mostrarMensagem(context, 'Pedido cancelado. A prova continua guardada.');
+    }
   }
 
   Widget _avisoStatus(String texto, Color cor) {

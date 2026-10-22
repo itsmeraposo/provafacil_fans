@@ -1,14 +1,19 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_state.dart';
+import 'arquivos.dart';
 import 'preferencias.dart';
 import 'screens/boas_vindas_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/pdf_visualizador_screen.dart';
 import 'theme.dart';
 import 'widgets/banner_offline.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +30,37 @@ Future<void> main() async {
   // No modo offline (entrou sem conexão), tenta abrir a sessão de novo antes
   // de falar com o servidor.
   ApiClient.instancia.aoFaltarSessao = AppState.instancia.garantirSessao;
+  // Avisa na tela quando algo guardado no aparelho é enviado sozinho.
+  AppState.instancia.aoAvisar = (mensagem) {
+    scaffoldMessengerKey.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(mensagem)));
+  };
+  // PDF/DOCX pedido sem conexão: quando fica pronto, avisa com botão "Abrir".
+  AppState.instancia.aoArquivoPronto = (bytes, titulo, formato) {
+    final nome = Arquivos.nome(titulo, formato);
+    scaffoldMessengerKey.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        duration: const Duration(seconds: 30),
+        content: Text('${formato.toUpperCase()} da prova "$titulo" pronto.'),
+        action: SnackBarAction(
+          label: 'Abrir',
+          onPressed: () {
+            if (formato != 'pdf') {
+              Arquivos.compartilhar(bytes, nome, mime: mimeDocx);
+            } else if (kIsWeb) {
+              Arquivos.visualizarPdf(bytes, nome);
+            } else {
+              navigatorKey.currentState?.push(MaterialPageRoute(
+                builder: (_) =>
+                    PdfVisualizadorScreen(bytes: bytes, nome: nome),
+              ));
+            }
+          },
+        ),
+      ));
+  };
   runApp(const ProvaFacilApp());
 }
 
@@ -41,6 +77,7 @@ class ProvaFacilApp extends StatelessWidget {
     return MaterialApp(
       title: 'Prova Fácil',
       navigatorKey: navigatorKey,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       builder: (context, child) {

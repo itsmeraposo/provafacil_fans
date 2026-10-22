@@ -231,6 +231,25 @@ class Prova {
     );
   }
 
+  /// Guarda a prova no aparelho (rascunho local). Usa o mesmo formato que o
+  /// servidor devolve, então `Prova.fromJson` consegue ler de volta.
+  Map<String, dynamic> toLocalJson() => {
+        'id': id,
+        'titulo': titulo,
+        'curso': curso,
+        'professor': professor,
+        'data': data,
+        'periodo': periodo,
+        'etapa': etapa,
+        'valorProva': valorProva,
+        'instrucoes': instrucoes,
+        'linhasResposta': linhasResposta,
+        'status': 'rascunho',
+        'questaoIds': questoes.map((q) => q.id).toList(),
+        'questoesSnapshot': questoes.map((q) => q.toJson()).toList(),
+        'criadoPorId': criadoPorId,
+      };
+
   final String id;
   String titulo;
   String curso;

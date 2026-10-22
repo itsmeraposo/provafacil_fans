@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../api.dart';
 import '../../app_state.dart';
 import '../../models.dart';
+import '../../preferencias.dart';
 import '../../theme.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/common.dart';
@@ -47,7 +49,7 @@ class PainelProfessorScreen extends StatelessWidget {
         itens: [
           CartaoIndicador(
             rotulo: 'Provas no semestre',
-            valor: '${minhasProvas.length}',
+            valor: '${minhasProvas.length + (Preferencias.rascunhoLocal.value != null ? 1 : 0)}',
             icone: Icons.assignment_outlined,
           ),
           CartaoIndicador(
@@ -77,7 +79,34 @@ class PainelProfessorScreen extends StatelessWidget {
         label: const Text('Criar nova prova'),
       ),
       const SizedBox(height: 8),
-      if (minhasProvas.isEmpty)
+      // Rascunho de prova nova guardado só neste aparelho (sem conexão).
+      ValueListenableBuilder<Prova?>(
+        valueListenable: Preferencias.rascunhoLocal,
+        builder: (context, rascunho, _) {
+          if (rascunho == null) return const SizedBox.shrink();
+          return ValueListenableBuilder<String?>(
+            valueListenable: Preferencias.acaoRascunhoLocal,
+            builder: (context, acao, _) =>
+                ValueListenableBuilder<bool>(
+              valueListenable: ApiClient.instancia.semConexao,
+              builder: (context, semConexao, _) => LinhaProva(
+                titulo: rascunho.titulo,
+                detalhe: '${rascunho.curso} · ${_situacaoLocal(acao)}'
+                    '${_motivoFalha()}',
+                status: StatusProva.rascunho,
+                aviso: _avisoLocal(semConexao),
+                aoTocar: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        RevisaoProvaScreen(prova: rascunho, provaNova: true),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+      if (minhasProvas.isEmpty && Preferencias.rascunhoLocal.value == null)
         const EstadoVazio(
           texto: 'Você ainda não criou nenhuma prova. Toque em "Criar nova\n'
               'prova" para começar.',
@@ -97,14 +126,46 @@ class PainelProfessorScreen extends StatelessWidget {
   }
 
   Widget _linhaProva(BuildContext context, Prova prova) {
+    // Se há alterações guardadas no aparelho (feitas sem conexão), mostra a
+    // versão editada com o aviso.
+    final editada = AppState.instancia.edicoesLocais[prova.id];
+    final exibida = editada ?? prova;
     return LinhaProva(
-      titulo: prova.titulo,
-      detalhe: '${prova.curso} · ${prova.data}',
+      titulo: exibida.titulo,
+      detalhe: '${exibida.curso} · ${exibida.data}',
       status: prova.status,
+      aviso: editada != null
+          ? _avisoLocal(ApiClient.instancia.semConexao.value)
+          : null,
       aoTocar: () => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => RevisaoProvaScreen(prova: prova)),
       ),
     );
+  }
+
+  /// Sem conexão: o que está no aparelho espera a internet. Com conexão, ainda
+  /// não foi enviado (o envio automático roda a cada 15 s).
+  static String _avisoLocal(bool semConexao) =>
+      semConexao ? 'Sem conexão' : 'Não enviado';
+
+  /// Motivo da última falha do envio automático (se o servidor respondeu com
+  /// erro), para o professor saber por que a prova ainda não foi enviada.
+  static String _motivoFalha() {
+    final erro = AppState.instancia.erroSincronizacao.value;
+    return erro == null ? '' : '\nNão enviada: $erro';
+  }
+
+  static String _situacaoLocal(String? acao) {
+    switch (acao) {
+      case 'enviar':
+        return 'será enviada ao coordenador';
+      case 'pdf':
+        return 'o PDF será gerado';
+      case 'docx':
+        return 'o DOCX será gerado';
+      default:
+        return 'guardado neste aparelho';
+    }
   }
 
   static String _assuntoMaisComum(List<Questao> questoes) {

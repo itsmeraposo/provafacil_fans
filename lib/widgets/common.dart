@@ -241,12 +241,16 @@ class LinhaProva extends StatelessWidget {
     required this.detalhe,
     required this.status,
     required this.aoTocar,
+    this.aviso,
   });
 
   final String titulo;
   final String detalhe;
   final StatusProva status;
   final VoidCallback aoTocar;
+
+  /// Aviso extra sob o selo (ex.: "Sem conexão" para o que só está no aparelho).
+  final String? aviso;
 
   @override
   Widget build(BuildContext context) {
@@ -283,7 +287,31 @@ class LinhaProva extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              SeloStatus(status),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  SeloStatus(status),
+                  if (aviso != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off,
+                            size: 13, color: AppColors.claret),
+                        const SizedBox(width: 4),
+                        Text(
+                          aviso!,
+                          style: const TextStyle(
+                            color: AppColors.claret,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ],
           ),
         ),

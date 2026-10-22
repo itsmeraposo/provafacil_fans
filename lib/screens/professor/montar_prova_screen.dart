@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
 import '../../models.dart';
+import '../../preferencias.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
 import 'revisao_prova_screen.dart';
@@ -22,6 +23,76 @@ class MontarProvaScreen extends StatefulWidget {
 class _MontarProvaScreenState extends State<MontarProvaScreen> {
   final Set<String> _selecionadas = {};
 
+  /// Rascunho de prova guardado neste aparelho (ainda não enviado ao servidor).
+  Prova? _rascunhoLocal;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarRascunhoLocal();
+  }
+
+  Future<void> _carregarRascunhoLocal() async {
+    final usuario = AppState.instancia.usuarioAtual;
+    if (usuario == null) return;
+    final rascunho = await Preferencias.lerRascunhoLocal(usuario.id);
+    if (!mounted) return;
+    setState(() => _rascunhoLocal = rascunho);
+  }
+
+  void _continuarRascunhoLocal() {
+    final rascunho = _rascunhoLocal;
+    if (rascunho == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RevisaoProvaScreen(prova: rascunho, provaNova: true),
+      ),
+    );
+  }
+
+  Future<void> _descartarRascunhoLocal() async {
+    final usuario = AppState.instancia.usuarioAtual;
+    if (usuario != null) await Preferencias.apagarRascunhoLocal(usuario.id);
+    if (!mounted) return;
+    setState(() => _rascunhoLocal = null);
+  }
+
+  Widget _avisoRascunhoLocal(Prova rascunho) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      color: AppColors.accentSoft,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Rascunho salvo neste aparelho',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(height: 2),
+            Text(
+              '${rascunho.titulo} · ${rascunho.questoes.length} questão(ões)',
+              style:
+                  const TextStyle(fontSize: 12, color: AppColors.inkMuted),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _descartarRascunhoLocal,
+                  child: const Text('Descartar'),
+                ),
+                TextButton(
+                  onPressed: _continuarRascunhoLocal,
+                  child: const Text('Continuar'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   double get _pontosSelecionados {
     final questoes = AppState.instancia.questoesEnviadas;
     return questoes
@@ -29,7 +100,39 @@ class _MontarProvaScreenState extends State<MontarProvaScreen> {
         .fold<double>(0, (soma, q) => soma + q.valor);
   }
 
-  void _continuar() {
+  /// Se já houver um rascunho guardado no aparelho, a prova nova o
+  /// substituiria: pergunta antes de seguir.
+  Future<bool> _confirmarSubstituicao() async {
+    final usuario = AppState.instancia.usuarioAtual;
+    if (usuario == null) return true;
+    final existente = await Preferencias.lerRascunhoLocal(usuario.id);
+    if (existente == null || !mounted) return true;
+    final substituir = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Substituir rascunho?'),
+        content: Text(
+          'Já existe um rascunho guardado neste aparelho '
+          '("${existente.titulo}", ${existente.questoes.length} questão(ões)). '
+          'Se continuar, ele será substituído por esta prova.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Substituir'),
+          ),
+        ],
+      ),
+    );
+    return substituir == true;
+  }
+
+  Future<void> _continuar() async {
+    if (!await _confirmarSubstituicao() || !mounted) return;
     final estado = AppState.instancia;
     final usuario = estado.usuarioAtual!;
     final questoesSelecionadas =
@@ -69,6 +172,7 @@ class _MontarProvaScreenState extends State<MontarProvaScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            if (_rascunhoLocal != null) _avisoRascunhoLocal(_rascunhoLocal!),
             Expanded(
               child: questoes.isEmpty
                   ? const EstadoVazio(

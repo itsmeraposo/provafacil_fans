@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -49,6 +50,235 @@ class AppState extends ChangeNotifier {
   bool semSessao = false;
 
   bool get logado => usuarioAtual != null;
+
+  /* ------------- envio automático do que ficou no aparelho (offline) */
+
+  /// Avisa o usuário (SnackBar) quando algo guardado no aparelho é enviado.
+  /// Configurado em main.dart.
+  void Function(String mensagem)? aoAvisar;
+
+  /// Avisa que um arquivo (PDF/DOCX) pedido sem conexão ficou pronto. Quem
+  /// escuta (main.dart) mostra um aviso com o botão "Abrir".
+  void Function(Uint8List bytes, String titulo, String formato)?
+      aoArquivoPronto;
+
+  /// Edições feitas sem conexão em provas que já estão no servidor, esperando
+  /// para serem enviadas (id da prova → prova editada).
+  final Map<String, Prova> edicoesLocais = {};
+
+  /// O que cada edição guardada vai fazer ao ser enviada (`rascunho`,
+  /// `enviar`, `pdf` ou `docx`), pelo id da prova.
+  final Map<String, String> acoesEdicoes = {};
+
+  /// Último motivo pelo qual o envio automático não deu certo (para mostrar
+  /// na lista de rascunhos). `null` quando não há problema.
+  final ValueNotifier<String?> erroSincronizacao = ValueNotifier<String?>(null);
+  final Set<String> _edicoesRecusadas = {};
+
+  Future<void> _carregarEdicoesLocais() async {
+    final usuario = usuarioAtual;
+    if (usuario == null) return;
+    final lista = await Preferencias.lerEdicoesLocais(usuario.id);
+    edicoesLocais
+      ..clear()
+      ..addEntries(lista.map((e) => MapEntry(e.prova.id, e.prova)));
+    acoesEdicoes
+      ..clear()
+      ..addEntries(lista.map((e) => MapEntry(e.prova.id, e.acao)));
+  }
+
+  /// Ao abrir uma prova do servidor: devolve a edição guardada no aparelho
+  /// (se houver). O pedido guardado (enviar, PDF, DOCX) continua valendo até
+  /// o professor cancelar na tela de revisão.
+  Prova? abrirEdicaoLocal(String id) => edicoesLocais[id];
+
+  /// Guarda a edição de uma prova do servidor feita sem conexão.
+  Future<void> guardarEdicaoLocal(Prova prova, String acao) async {
+    final usuario = usuarioAtual;
+    if (usuario == null || prova.id.isEmpty) return;
+    edicoesLocais[prova.id] = prova;
+    acoesEdicoes[prova.id] = acao;
+    _edicoesRecusadas.remove(prova.id);
+    await Preferencias.salvarEdicaoLocal(usuario.id, prova, acao);
+    notifyListeners();
+  }
+
+  /// A prova foi para o servidor: a edição guardada não é mais necessária.
+  Future<void> descartarEdicaoLocal(String id) async {
+    final usuario = usuarioAtual;
+    edicoesLocais.remove(id);
+    acoesEdicoes.remove(id);
+    if (usuario != null) await Preferencias.apagarEdicaoLocal(usuario.id, id);
+    notifyListeners();
+  }
+
+  Timer? _temporizadorSync;
+  bool _sincronizando = false;
+  bool _rascunhoRecusado = false;
+  int _revisoesAbertas = 0;
+
+  /// A tela de revisão de prova avisa quando abre e fecha. Enquanto ela está
+  /// aberta, o rascunho local não é enviado sozinho (para não duplicar).
+  void revisaoAberta() {
+    _revisoesAbertas++;
+    _rascunhoRecusado = false;
+  }
+
+  void revisaoFechada() {
+    if (_revisoesAbertas > 0) _revisoesAbertas--;
+  }
+
+  /// A cada 15 s confere se há questões ou um rascunho de prova guardados só
+  /// no aparelho. Só fala com o servidor se houver algo para enviar.
+  void _iniciarSincronizacao() {
+    _temporizadorSync ??= Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _sincronizarEmSegundoPlano(),
+    );
+  }
+
+  Future<void> _sincronizarEmSegundoPlano() async {
+    final usuario = usuarioAtual;
+    if (usuario == null) {
+      _temporizadorSync?.cancel();
+      _temporizadorSync = null;
+      return;
+    }
+    if (_sincronizando || _revisoesAbertas > 0) return;
+    _sincronizando = true;
+    try {
+      final pendentes = await Preferencias.lerPendentes(usuario.id);
+      final rascunho = _rascunhoRecusado
+          ? null
+          : await Preferencias.lerRascunhoLocal(usuario.id);
+      final edicoes = (await Preferencias.lerEdicoesLocais(usuario.id))
+          .where((e) => !_edicoesRecusadas.contains(e.prova.id))
+          .toList();
+      if (pendentes.isEmpty && rascunho == null && edicoes.isEmpty) return;
+
+      var enviouAlgo = false;
+      if (pendentes.isNotEmpty && await sincronizarPendentes() > 0) {
+        aoAvisar?.call('Questões cadastradas sem conexão foram enviadas.');
+        enviouAlgo = true;
+      }
+      if (rascunho != null) {
+        final aviso = await sincronizarRascunhoProva(rascunho);
+        if (aviso != null) {
+          if (aviso.isNotEmpty) aoAvisar?.call(aviso);
+          enviouAlgo = true;
+        }
+      }
+      for (final edicao in edicoes) {
+        final id = edicao.prova.id;
+        try {
+          final aviso = await _enviarProvaLocal(
+            edicao.prova,
+            edicao.acao,
+            () => descartarEdicaoLocal(id),
+          );
+          if (aviso.isNotEmpty) aoAvisar?.call(aviso);
+          erroSincronizacao.value = null;
+          enviouAlgo = true;
+        } on ApiException catch (erro) {
+          final status = erro.status;
+          erroSincronizacao.value = status == null ? null : erro.mensagem;
+          final tentarDepois = status == null ||
+              status >= 500 ||
+              status == 401 ||
+              status == 403;
+          if (!tentarDepois) {
+            _edicoesRecusadas.add(id);
+            aoAvisar?.call('Não foi possível enviar as alterações guardadas '
+                'da prova "${edicao.prova.titulo}": ${erro.mensagem}');
+          }
+        }
+      }
+      if (enviouAlgo) await carregarDados();
+    } finally {
+      _sincronizando = false;
+    }
+  }
+
+  /// Envia ao servidor uma prova guardada no aparelho e faz o que o professor
+  /// tinha pedido sem conexão ([acao]: só salvar, `enviar`, `pdf` ou `docx`).
+  /// [limpar] é chamado assim que a prova chega ao servidor (antes de gerar o
+  /// arquivo), para não criar a prova duas vezes se algo falhar depois.
+  /// Devolve o texto do aviso (vazio = sem aviso). Erros ao salvar/enviar
+  /// seguem como [ApiException], e quem chama decide se tenta de novo.
+  Future<String> _enviarProvaLocal(
+    Prova prova,
+    String? acao,
+    Future<void> Function() limpar,
+  ) async {
+    if (acao == 'enviar') {
+      await enviarParaCoordenador(prova);
+      await limpar();
+      return 'Prova enviada ao coordenador.';
+    }
+
+    final salva = await salvarRascunho(prova);
+    await limpar();
+    if (acao != 'pdf' && acao != 'docx') {
+      return prova.id.isEmpty
+          ? 'Rascunho da prova enviado ao servidor.'
+          : 'Alterações da prova "${prova.titulo}" enviadas ao servidor.';
+    }
+
+    final formato = acao!;
+    try {
+      // Usa as questões guardadas no aparelho, com o id que o servidor deu.
+      final paraGerar = Prova(
+        id: salva.id,
+        titulo: prova.titulo,
+        curso: prova.curso,
+        professor: prova.professor,
+        data: prova.data,
+        periodo: prova.periodo,
+        etapa: prova.etapa,
+        valorProva: prova.valorProva,
+        instrucoes: prova.instrucoes,
+        linhasResposta: prova.linhasResposta,
+        questoes: prova.questoes,
+        status: StatusProva.rascunho,
+      );
+      final bytes = await gerarArquivo(paraGerar, formato);
+      aoArquivoPronto?.call(bytes, prova.titulo, formato);
+      return '';
+    } on ApiException {
+      return 'Prova salva no servidor, mas não foi possível gerar o '
+          '${formato.toUpperCase()}. Abra a prova e gere de novo.';
+    }
+  }
+
+  /// Envia o rascunho de prova NOVA guardado no aparelho. Devolve `null` se
+  /// não deu certo (tenta de novo depois) ou o texto do aviso se deu.
+  Future<String?> sincronizarRascunhoProva(Prova rascunho) async {
+    final usuario = usuarioAtual;
+    if (usuario == null || rascunho.questoes.isEmpty) return null;
+    final acao = await Preferencias.lerAcaoPendente(usuario.id);
+    try {
+      final aviso = await _enviarProvaLocal(
+        rascunho,
+        acao,
+        () => Preferencias.apagarRascunhoLocal(usuario.id),
+      );
+      erroSincronizacao.value = null;
+      return aviso;
+    } on ApiException catch (erro) {
+      final status = erro.status;
+      erroSincronizacao.value = status == null ? null : erro.mensagem;
+      final tentarDepois =
+          status == null || status >= 500 || status == 401 || status == 403;
+      // Recusado pelo servidor (dados inválidos): não adianta insistir sozinho.
+      if (!tentarDepois) {
+        _rascunhoRecusado = true;
+        aoAvisar?.call('Não foi possível enviar o rascunho guardado neste '
+            'aparelho: ${erro.mensagem} Abra "Montar prova" e toque em '
+            '"Continuar" para revisar.');
+      }
+      return null;
+    }
+  }
 
   /* ------------------------------------------------------------ auth */
 
@@ -186,6 +416,14 @@ class AppState extends ChangeNotifier {
   void sessaoExpirada() => _limpar();
 
   void _limpar() {
+    _temporizadorSync?.cancel();
+    _temporizadorSync = null;
+    _rascunhoRecusado = false;
+    erroSincronizacao.value = null;
+    acoesEdicoes.clear();
+    edicoesLocais.clear();
+    Preferencias.rascunhoLocal.value = null;
+    Preferencias.acaoRascunhoLocal.value = null;
     _api.limparSessao();
     usuarioAtual = null;
     semSessao = false;
@@ -205,6 +443,12 @@ class AppState extends ChangeNotifier {
   Future<void> carregarDados() async {
     final usuario = usuarioAtual;
     if (usuario == null) return;
+    _iniciarSincronizacao();
+    // Atualizar (puxar a lista, "Tentar de novo") também tenta enviar agora o
+    // que ficou guardado no aparelho, sem esperar o próximo ciclo de 15 s.
+    await _sincronizarEmSegundoPlano();
+    await _carregarEdicoesLocais();
+    await Preferencias.atualizarRascunhoLocal(usuario.id);
 
     carregando = true;
     erroCarregamento = null;
@@ -235,9 +479,22 @@ class AppState extends ChangeNotifier {
         }
         await _juntarPendentes(usuario.id);
       }
-      final respostaProvas =
-          await _api.get('/api/provas', consulta: {'limite': '50'});
-      provas = _lista(respostaProvas['provas']).map(Prova.fromJson).toList();
+      try {
+        final respostaProvas =
+            await _api.get('/api/provas', consulta: {'limite': '50'});
+        final brutas = _lista(respostaProvas['provas']);
+        provas = brutas.map(Prova.fromJson).toList();
+        await Preferencias.salvarProvasCache(usuario.id, brutas);
+      } on ApiException catch (erro) {
+        // Mesma regra das questões: sem conexão ou servidor fora, usa a
+        // última lista de provas guardada no aparelho.
+        final semServico = erro.status == null || erro.status! >= 500;
+        final guardadas =
+            semServico ? await Preferencias.lerProvasCache(usuario.id) : null;
+        if (guardadas == null) rethrow;
+        provas = guardadas;
+        usandoCache = true;
+      }
     } on ApiException catch (erro) {
       erroCarregamento = erro.mensagem;
     } catch (_) {
@@ -246,7 +503,7 @@ class AppState extends ChangeNotifier {
 
     if (usandoCache) {
       erroCarregamento = 'Sem conexão com o servidor. Mostrando a última '
-          'lista de questões salva neste aparelho.';
+          'cópia dos dados salva neste aparelho.';
     }
 
     carregando = false;
