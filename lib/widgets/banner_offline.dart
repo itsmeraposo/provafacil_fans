@@ -32,61 +32,60 @@ class MoldeOffline extends StatelessWidget {
           children: [
             if (visivel)
               Material(
-                color: AppColors.claret,
-                child: SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.cloud_off,
-                            color: Colors.white, size: 22),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'SEM CONEXÃO COM O SERVIDOR',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12.5,
-                                  letterSpacing: 0.3,
-                                  decoration: TextDecoration.none,
-                                ),
+              color: AppColors.claret,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.cloud_off, color: Colors.white, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'SEM CONEXÃO COM O SERVIDOR',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12.5,
+                                letterSpacing: 0.3,
+                                decoration: TextDecoration.none,
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Você está vendo a última cópia salva neste '
-                                'aparelho (dados reais). O que '
-                                'for cadastrado aqui será enviado quando a '
-                                'conexão voltar.'
-                                '${pendentes > 0 ? ' Pendentes de envio: $pendentes.' : ''}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11.5,
-                                  height: 1.25,
-                                  fontWeight: FontWeight.w400,
-                                  decoration: TextDecoration.none,
-                                ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Você está vendo a última cópia salva neste '
+                              'aparelho (dados reais, não de exemplo). O que '
+                              'for cadastrado aqui será enviado quando a '
+                              'conexão voltar.'
+                              '${pendentes > 0 ? ' Pendentes de envio: $pendentes.' : ''}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11.5,
+                                height: 1.25,
+                                fontWeight: FontWeight.w400,
+                                decoration: TextDecoration.none,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        TextButton(
-                          onPressed: () => AppState.instancia.carregarDados(),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                          ),
-                          child: const Text('Tentar de novo'),
+                      ),
+                      TextButton(
+                        onPressed: () => AppState.instancia.carregarDados(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                         ),
-                      ],
-                    ),
+                        child: const Text('Tentar de novo'),
+                      ),
+                    ],
                   ),
                 ),
               ),
+            ),
             Expanded(
               // Com a faixa visível ela já ocupa a área da barra de status:
               // as telas não precisam reservar esse espaço de novo.

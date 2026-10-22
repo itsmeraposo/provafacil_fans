@@ -214,10 +214,14 @@ class _QuestaoFormScreenState extends State<QuestaoFormScreen> {
                       decoration: const InputDecoration(labelText: 'Valor (pts)'),
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
-                      validator: (valor) =>
-                          (valor == null || valor.trim().isEmpty)
-                              ? 'Obrigatório'
-                              : null,
+                      validator: (valor) {
+                        final texto = (valor ?? '').trim().replaceAll(',', '.');
+                        if (texto.isEmpty) return 'Obrigatório';
+                        final numero = double.tryParse(texto);
+                        if (numero == null) return 'Digite um número';
+                        if (numero <= 0 || numero > 10) return 'Entre 0,1 e 10';
+                        return null;
+                      },
                     ),
                   ),
                 ],
