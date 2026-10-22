@@ -93,8 +93,7 @@ class ApiClient {
       if (!conseguiu) {
         semConexao.value = true;
         throw ApiException(
-          'Não foi possível conectar ao servidor. Verifique a internet e o '
-          'endereço configurado em lib/config.dart.',
+          'Sem conexão com o servidor. Tente de novo quando a internet voltar.',
         );
       }
     }
@@ -114,8 +113,7 @@ class ApiClient {
     } catch (_) {
       semConexao.value = true;
       throw ApiException(
-        'Não foi possível conectar ao servidor. Verifique a internet e o '
-        'endereço configurado em lib/config.dart.',
+        'Sem conexão com o servidor. Tente de novo quando a internet voltar.',
       );
     }
 

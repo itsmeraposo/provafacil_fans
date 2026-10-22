@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../app_state.dart';
 import '../models.dart';
-import '../preferencias.dart';
 import '../theme.dart';
 import '../validators.dart';
 import '../widgets/app_drawer.dart';
@@ -238,33 +237,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 24),
-          const TituloSecao('Aparência'),
-          Card(
-            child: ValueListenableBuilder<bool>(
-              valueListenable: Preferencias.textoGrande,
-              builder: (context, grande, _) => SwitchListTile(
-                title: const Text('Texto grande'),
-                subtitle: const Text(
-                    'Aumenta o tamanho das letras. Fica salvo neste aparelho.'),
-                value: grande,
-                onChanged: (valor) async {
-                  final salvou = await Preferencias.definirTextoGrande(valor);
-                  if (!salvou && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        duration: const Duration(seconds: 20),
-                        content: Text(
-                          'Não foi possível guardar esta opção no aparelho.\n'
-                          'Erro: ${Preferencias.ultimoErro ?? 'desconhecido'}',
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
           ),
           const SizedBox(height: 20),
           const TituloSecao('Informações pessoais'),

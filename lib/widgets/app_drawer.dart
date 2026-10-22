@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_state.dart';
 import '../models.dart';
+import '../preferencias.dart';
 import '../screens/direcao/painel_direcao_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/perfil_screen.dart';
@@ -91,7 +92,7 @@ class AppDrawer extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   const Text(
-                    'ProvaFácil',
+                    'Prova Fácil',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ],
@@ -111,6 +112,33 @@ class AppDrawer extends StatelessWidget {
                       cor: cor,
                     ),
                 ],
+              ),
+            ),
+            const Divider(height: 1),
+            // Preferência só deste aparelho: não depende de conexão nem do
+            // formulário de perfil.
+            ValueListenableBuilder<bool>(
+              valueListenable: Preferencias.textoGrande,
+              builder: (context, grande, _) => SwitchListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                secondary: const Icon(Icons.text_fields,
+                    size: 19, color: AppColors.inkMuted),
+                title: const Text('Texto grande',
+                    style:
+                        TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500)),
+                value: grande,
+                onChanged: (valor) async {
+                  final salvou = await Preferencias.definirTextoGrande(valor);
+                  if (!salvou && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('Não foi possível guardar esta opção.'),
+                      ),
+                    );
+                  }
+                },
               ),
             ),
             const Divider(height: 1),

@@ -39,7 +39,7 @@ class ProvaFacilApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ProvaFácil FANS',
+      title: 'Prova Fácil',
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
