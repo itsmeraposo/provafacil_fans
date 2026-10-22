@@ -6,6 +6,7 @@ import 'preferencias.dart';
 import 'screens/boas_vindas_screen.dart';
 import 'screens/login_screen.dart';
 import 'theme.dart';
+import 'widgets/banner_offline.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -21,6 +22,9 @@ Future<void> main() async {
       (rota) => false,
     );
   };
+  // No modo offline (entrou sem conexão), tenta abrir a sessão de novo antes
+  // de falar com o servidor.
+  ApiClient.instancia.aoFaltarSessao = AppState.instancia.garantirSessao;
   runApp(const ProvaFacilApp());
 }
 
@@ -49,7 +53,7 @@ class ProvaFacilApp extends StatelessWidget {
                     .clamp(minScaleFactor: 1.0, maxScaleFactor: 1.25);
             return MediaQuery(
               data: MediaQuery.of(context).copyWith(textScaler: escala),
-              child: child!,
+              child: MoldeOffline(child: child!),
             );
           },
         );

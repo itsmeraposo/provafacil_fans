@@ -124,4 +124,36 @@ class Preferencias {
       debugPrint('Preferencias: não foi possível gravar: $erro');
     }
   }
+
+  /* ------------------------------- último usuário que entrou (modo offline) */
+
+  static String _chaveUsuario(String perfil) => 'usuarioOffline:$perfil';
+
+  /// Guarda os dados do usuário do acesso direto, devolvidos pelo servidor,
+  /// para o app conseguir abrir o painel mesmo sem conexão.
+  static Future<void> salvarUsuarioOffline(
+    String perfil,
+    Map<String, dynamic> usuario,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_chaveUsuario(perfil), jsonEncode(usuario));
+    } catch (erro) {
+      debugPrint('Preferencias: não foi possível gravar usuário: $erro');
+    }
+  }
+
+  static Future<Usuario?> lerUsuarioOffline(String perfil) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final bruto = prefs.getString(_chaveUsuario(perfil));
+      if (bruto == null) return null;
+      final dados = jsonDecode(bruto);
+      if (dados is! Map<String, dynamic>) return null;
+      return Usuario.fromJson(dados);
+    } catch (erro) {
+      debugPrint('Preferencias: não foi possível ler usuário: $erro');
+      return null;
+    }
+  }
 }

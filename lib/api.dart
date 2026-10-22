@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 
 import 'config.dart';
@@ -40,9 +41,22 @@ class ApiClient {
   /// sessão). O app usa isso para voltar ao login.
   void Function()? aoSessaoExpirada;
 
+  /// Usado no modo offline (o app entrou sem conexão e está sem sessão): antes
+  /// de uma chamada que exige sessão, tenta abrir a sessão de novo. Devolve
+  /// `false` se continua sem conexão.
+  Future<bool> Function()? aoFaltarSessao;
+
   bool get temSessao => _sessao != null && _sessao!.isNotEmpty;
 
-  void limparSessao() => _sessao = null;
+  /// Verdadeiro quando a última tentativa de falar com o servidor falhou por
+  /// falta de conexão. A tela usa isso para avisar, bem visível, que o app
+  /// está sem conexão. Volta a `false` assim que o servidor responde.
+  final ValueNotifier<bool> semConexao = ValueNotifier<bool>(false);
+
+  void limparSessao() {
+    _sessao = null;
+    semConexao.value = false;
+  }
 
   Uri _uri(String caminho, Map<String, String>? consulta) {
     final base = Uri.parse(apiBaseUrl);
@@ -72,6 +86,19 @@ class ApiClient {
     Object? corpo,
     Map<String, String>? consulta,
   }) async {
+    if (!temSessao &&
+        !caminho.startsWith('/api/auth/') &&
+        aoFaltarSessao != null) {
+      final conseguiu = await aoFaltarSessao!();
+      if (!conseguiu) {
+        semConexao.value = true;
+        throw ApiException(
+          'Não foi possível conectar ao servidor. Verifique a internet e o '
+          'endereço configurado em lib/config.dart.',
+        );
+      }
+    }
+
     final requisicao = http.Request(metodo, _uri(caminho, consulta));
     requisicao.headers['Accept'] = 'application/json';
     if (temSessao) requisicao.headers['Authorization'] = 'Bearer $_sessao';
@@ -85,12 +112,15 @@ class ApiClient {
       final fluxo = await _http.send(requisicao).timeout(_limiteTempo);
       resposta = await http.Response.fromStream(fluxo);
     } catch (_) {
+      semConexao.value = true;
       throw ApiException(
         'Não foi possível conectar ao servidor. Verifique a internet e o '
         'endereço configurado em lib/config.dart.',
       );
     }
 
+    // O servidor respondeu (mesmo que com erro): há conexão.
+    semConexao.value = false;
     if (resposta.statusCode >= 400) throw _erroDe(resposta);
     _guardarToken(caminho, resposta);
     return resposta;

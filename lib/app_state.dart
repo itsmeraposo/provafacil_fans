@@ -43,6 +43,11 @@ class AppState extends ChangeNotifier {
   /// aparelho (servidor ou internet indisponível), e não do servidor.
   bool usandoCache = false;
 
+  /// Verdadeiro quando o app entrou sem conexão (usando os dados guardados no
+  /// aparelho) e ainda não tem sessão com o servidor. A sessão é pedida de
+  /// novo sozinha assim que a conexão voltar.
+  bool semSessao = false;
+
   bool get logado => usuarioAtual != null;
 
   /* ------------------------------------------------------------ auth */
@@ -79,14 +84,60 @@ class AppState extends ChangeNotifier {
   /// MODO SEM LOGIN (`loginAtivo = false`): pede ao servidor a sessão do
   /// perfil escolhido, sem e-mail nem senha. O servidor precisa estar com
   /// `SEM_LOGIN=true` e a mesma chave de `semLoginChave` (lib/config.dart).
+  ///
+  /// Se não houver conexão (ou o servidor estiver fora do ar) e este perfil já
+  /// tiver entrado antes neste aparelho, abre o painel mesmo assim, com os
+  /// dados guardados localmente (modo offline).
   Future<void> entrarSemLogin(Perfil perfil) async {
-    final resposta = await _api.post('/api/auth/entrada-direta', {
-      'chave': semLoginChave,
-      'perfil': perfil.chave,
-    });
-    usuarioAtual = Usuario.fromJson(resposta['usuario'] as Map<String, dynamic>);
+    try {
+      final resposta = await _api.post('/api/auth/entrada-direta', {
+        'chave': semLoginChave,
+        'perfil': perfil.chave,
+      });
+      final dadosUsuario = resposta['usuario'] as Map<String, dynamic>;
+      usuarioAtual = Usuario.fromJson(dadosUsuario);
+      semSessao = false;
+      await Preferencias.salvarUsuarioOffline(perfil.chave, dadosUsuario);
+    } on ApiException catch (erro) {
+      // Erros de resposta do servidor (ex.: 403 chave errada, 404 modo
+      // desligado) seguem como erro. Só entra offline sem conexão ou 5xx.
+      final semServico = erro.status == null || erro.status! >= 500;
+      if (!semServico) rethrow;
+      final guardado = await Preferencias.lerUsuarioOffline(perfil.chave);
+      if (guardado == null) {
+        // Nunca entrou com internet neste aparelho: não há o que mostrar.
+        throw ApiException(
+          'Sem conexão com o servidor. Este perfil ainda não entrou com '
+          'internet neste aparelho: conecte-se uma vez para depois poder '
+          'usar sem conexão.',
+        );
+      }
+      usuarioAtual = guardado;
+      semSessao = true;
+    }
     notifyListeners();
     await carregarDados();
+  }
+
+  /// Chamado pelo cliente HTTP antes de requisições que exigem sessão. No modo
+  /// offline, tenta abrir a sessão; se não houver conexão, devolve `false`.
+  Future<bool> garantirSessao() async {
+    if (!semSessao) return true;
+    final usuario = usuarioAtual;
+    if (usuario == null) return false;
+    try {
+      final resposta = await _api.post('/api/auth/entrada-direta', {
+        'chave': semLoginChave,
+        'perfil': usuario.perfil.chave,
+      });
+      final dadosUsuario = resposta['usuario'] as Map<String, dynamic>;
+      usuarioAtual = Usuario.fromJson(dadosUsuario);
+      await Preferencias.salvarUsuarioOffline(usuario.perfil.chave, dadosUsuario);
+      semSessao = false;
+      return true;
+    } on ApiException {
+      return false;
+    }
   }
 
   Future<String> registrar({
@@ -137,6 +188,8 @@ class AppState extends ChangeNotifier {
   void _limpar() {
     _api.limparSessao();
     usuarioAtual = null;
+    semSessao = false;
+    usandoCache = false;
     questoes = [];
     provas = [];
     erroCarregamento = null;
