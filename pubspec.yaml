@@ -21,6 +21,17 @@ dependencies:
   share_plus: ^10.1.4
   web: ^1.1.1
   shared_preferences: ^2.3.0
+  dio: ^5.8.0
+  file_picker: ^10.0.0
+  flutter_secure_storage: ^9.2.0
+  flutter_local_notifications: ^19.0.0
+
+# O flutter_local_notifications (plugin do Windows) exige xml 6, o que fez o
+# pub rebaixar o archive para 4.0.9, versão que não funciona com o pacote
+# image (erro: "decodeLazy isn't defined for ZLibDecoder"). Fixa o archive na
+# versão que já funcionava.
+dependency_overrides:
+  archive: 4.5.2
 
 dev_dependencies:
   flutter_test:

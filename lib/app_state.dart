@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'armazenamento_token.dart';
 import 'config.dart';
 import 'models.dart';
 import 'preferencias.dart';
@@ -311,6 +312,40 @@ class AppState extends ChangeNotifier {
     await carregarDados();
   }
 
+  /// Ao abrir o app: se há um token guardado no aparelho, confere com o
+  /// servidor (`GET /api/auth/me`) e, estando válido, abre direto o painel.
+  /// Devolve `false` (e o app mostra o login) se não havia token, se ele
+  /// expirou ou se não deu para falar com o servidor.
+  Future<bool> restaurarSessao() async {
+    if (!await _api.restaurarSessaoGuardada()) return false;
+
+    // Aqui a falha de sessão não deve levar ao login por conta própria: quem
+    // chamou decide a tela.
+    final aviso = _api.aoSessaoExpirada;
+    _api.aoSessaoExpirada = null;
+    Usuario? usuario;
+    try {
+      final resposta = await _api.get('/api/auth/me');
+      usuario = Usuario.fromJson(resposta['usuario'] as Map<String, dynamic>);
+    } on ApiException catch (erro) {
+      if (erro.status == 401 || erro.status == 403) {
+        _api.limparSessao(); // token inválido ou expirado: apaga do aparelho
+      } else {
+        _api.esquecerSessaoEmMemoria(); // sem conexão: tenta de novo depois
+      }
+    } catch (_) {
+      _api.esquecerSessaoEmMemoria();
+    } finally {
+      _api.aoSessaoExpirada = aviso;
+    }
+
+    if (usuario == null) return false;
+    usuarioAtual = usuario;
+    notifyListeners();
+    await carregarDados();
+    return true;
+  }
+
   /// MODO SEM LOGIN (`loginAtivo = false`): pede ao servidor a sessão do
   /// perfil escolhido, sem e-mail nem senha. O servidor precisa estar com
   /// `SEM_LOGIN=true` e a mesma chave de `semLoginChave` (lib/config.dart).
@@ -410,6 +445,8 @@ class AppState extends ChangeNotifier {
       // Mesmo sem conexão, encerra a sessão localmente.
     }
     _limpar();
+    // Garante que o token sumiu do armazenamento seguro (item 13).
+    await ArmazenamentoToken.apagar();
   }
 
   /// Sessão derrubada pelo servidor (expirada): só limpa o estado local.

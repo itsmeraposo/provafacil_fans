@@ -4,6 +4,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../preferencias.dart';
 import '../screens/direcao/painel_direcao_screen.dart';
+import '../screens/enviar_documento_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/perfil_screen.dart';
 import '../screens/professor/banco_questoes_screen.dart';
@@ -37,6 +38,8 @@ class AppDrawer extends StatelessWidget {
               () => const PainelProfessorScreen()),
           _ItemMenu('Banco de Questões', Icons.storage_outlined,
               () => const BancoQuestoesScreen()),
+          _ItemMenu('Enviar documento', Icons.upload_file_outlined,
+              () => const EnviarDocumentoScreen()),
           _ItemMenu(
               'Perfil', Icons.person_outline, () => const PerfilScreen()),
         ];
@@ -44,6 +47,8 @@ class AppDrawer extends StatelessWidget {
         return [
           _ItemMenu('Início', Icons.dashboard_outlined,
               () => const PainelDirecaoScreen()),
+          _ItemMenu('Enviar documento', Icons.upload_file_outlined,
+              () => const EnviarDocumentoScreen()),
           _ItemMenu(
               'Perfil', Icons.person_outline, () => const PerfilScreen()),
         ];
@@ -51,6 +56,8 @@ class AppDrawer extends StatelessWidget {
         return [
           _ItemMenu('Início', Icons.dashboard_outlined,
               () => const PainelRepografiaScreen()),
+          _ItemMenu('Enviar documento', Icons.upload_file_outlined,
+              () => const EnviarDocumentoScreen()),
           _ItemMenu(
               'Perfil', Icons.person_outline, () => const PerfilScreen()),
         ];

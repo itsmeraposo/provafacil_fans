@@ -6,9 +6,13 @@ import 'api.dart';
 import 'app_state.dart';
 import 'arquivos.dart';
 import 'preferencias.dart';
+import 'models.dart';
 import 'screens/boas_vindas_screen.dart';
+import 'screens/direcao/painel_direcao_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pdf_visualizador_screen.dart';
+import 'screens/professor/painel_professor_screen.dart';
+import 'screens/repografia/painel_repografia_screen.dart';
 import 'theme.dart';
 import 'widgets/banner_offline.dart';
 
@@ -103,7 +107,47 @@ class ProvaFacilApp extends StatelessWidget {
           },
         );
       },
-      home: const BoasVindasScreen(),
+      home: const _TelaInicial(),
+    );
+  }
+}
+
+/// Primeira tela: se havia um login guardado no aparelho (token em
+/// armazenamento seguro) e o servidor ainda o aceita, abre direto o painel do
+/// perfil; senão mostra as boas-vindas, que levam ao login.
+class _TelaInicial extends StatefulWidget {
+  const _TelaInicial();
+
+  @override
+  State<_TelaInicial> createState() => _TelaInicialState();
+}
+
+class _TelaInicialState extends State<_TelaInicial> {
+  late final Future<bool> _restauracao = AppState.instancia
+      .restaurarSessao()
+      .timeout(const Duration(seconds: 15), onTimeout: () => false)
+      .catchError((_) => false);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _restauracao,
+      builder: (context, resultado) {
+        if (resultado.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final usuario = AppState.instancia.usuarioAtual;
+        if (resultado.data == true && usuario != null) {
+          return switch (usuario.perfil) {
+            Perfil.professor => const PainelProfessorScreen(),
+            Perfil.direcao => const PainelDirecaoScreen(),
+            Perfil.repografia => const PainelRepografiaScreen(),
+          };
+        }
+        return const BoasVindasScreen();
+      },
     );
   }
 }

@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 
+import 'armazenamento_token.dart';
 import 'config.dart';
 
 /// Erro devolvido pela API (ou falha de conexão), já com mensagem pronta
@@ -35,6 +37,11 @@ class ApiClient {
   static const Duration _limiteTempo = Duration(seconds: 40);
 
   final http.Client _http = http.Client();
+
+  /// Cliente usado só no upload de arquivos: o Dio informa o progresso do
+  /// envio (`onSendProgress`), inclusive no navegador.
+  final Dio _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 30)));
+
   String? _sessao;
 
   /// Chamado quando o servidor diz que a sessão acabou (401 com mensagem de
@@ -56,7 +63,21 @@ class ApiClient {
   void limparSessao() {
     _sessao = null;
     semConexao.value = false;
+    ArmazenamentoToken.apagar();
   }
+
+  /// Lê o token guardado em armazenamento seguro (login anterior). Devolve
+  /// `false` se não havia nenhum. Quem chama confere o token no servidor.
+  Future<bool> restaurarSessaoGuardada() async {
+    final token = await ArmazenamentoToken.ler();
+    if (token == null || token.isEmpty) return false;
+    _sessao = token;
+    return true;
+  }
+
+  /// Esquece o token só em memória (o guardado no aparelho continua lá).
+  /// Usado quando não deu para conferir o token por falta de conexão.
+  void esquecerSessaoEmMemoria() => _sessao = null;
 
   Uri _uri(String caminho, Map<String, String>? consulta) {
     final base = Uri.parse(apiBaseUrl);
@@ -76,6 +97,7 @@ class ApiClient {
       final dados = jsonDecode(utf8.decode(resposta.bodyBytes));
       if (dados is Map<String, dynamic> && dados['token'] is String) {
         _sessao = dados['token'] as String;
+        ArmazenamentoToken.salvar(_sessao!);
       }
     } catch (_) {}
   }
@@ -130,18 +152,23 @@ class ApiClient {
       final decodificado = jsonDecode(utf8.decode(resposta.bodyBytes));
       if (decodificado is Map<String, dynamic>) dados = decodificado;
     } catch (_) {}
+    return _erroDeDados(resposta.statusCode, dados);
+  }
 
+  ApiException _erroDeDados(int status, Map<String, dynamic>? dados) {
     final mensagem = (dados?['erro'] ??
-            'Erro ${resposta.statusCode} ao falar com o servidor.')
+            (status == 413
+                ? 'O arquivo é grande demais para o servidor.'
+                : 'Erro $status ao falar com o servidor.'))
         .toString();
 
     // O servidor responde "Sessão ..." quando o cookie sumiu ou expirou.
     // (Outros 401, como "Senha atual incorreta.", não derrubam a sessão.)
-    if (resposta.statusCode == 401 && mensagem.startsWith('Sessão')) {
-      _sessao = null;
+    if (status == 401 && mensagem.startsWith('Sessão')) {
+      limparSessao();
       aoSessaoExpirada?.call();
     }
-    return ApiException(mensagem, status: resposta.statusCode, dados: dados);
+    return ApiException(mensagem, status: status, dados: dados);
   }
 
   Map<String, dynamic> _mapa(http.Response resposta) {
@@ -173,5 +200,59 @@ class ApiClient {
       {Object? corpo}) async {
     final resposta = await _enviar(metodo, caminho, corpo: corpo);
     return resposta.bodyBytes;
+  }
+
+  /// Envia um arquivo por POST `multipart/form-data` (Dio), com o token no
+  /// cabeçalho `Authorization: Bearer`. [aoProgredir] recebe os bytes já
+  /// enviados e o total. Lança [ApiException] em erro (401, 403, etc.).
+  Future<Map<String, dynamic>> enviarArquivo(
+    String caminho, {
+    required String campo,
+    required Uint8List bytes,
+    required String nomeArquivo,
+    required String mime,
+    void Function(int enviados, int total)? aoProgredir,
+  }) async {
+    final partes = mime.split('/');
+    final formulario = FormData.fromMap({
+      campo: MultipartFile.fromBytes(
+        bytes,
+        filename: nomeArquivo,
+        contentType: DioMediaType(partes.first, partes.last),
+      ),
+    });
+
+    Response<dynamic> resposta;
+    try {
+      resposta = await _dio.post<dynamic>(
+        _uri(caminho, null).toString(),
+        data: formulario,
+        onSendProgress: aoProgredir,
+        options: Options(
+          headers: {
+            'Accept': 'application/json',
+            if (temSessao) 'Authorization': 'Bearer $_sessao',
+          },
+          // Os códigos 4xx/5xx chegam como resposta (não como exceção) para
+          // o app tratar 401 e 403 do mesmo jeito que nas outras chamadas.
+          validateStatus: (_) => true,
+          sendTimeout: const Duration(seconds: 90),
+          receiveTimeout: const Duration(seconds: 120),
+        ),
+      );
+    } on DioException {
+      semConexao.value = true;
+      throw ApiException(
+        'Sem conexão com o servidor. Tente de novo quando a internet voltar.',
+      );
+    }
+
+    semConexao.value = false;
+    final status = resposta.statusCode ?? 0;
+    final corpo = resposta.data;
+    final dados =
+        corpo is Map ? Map<String, dynamic>.from(corpo) : null;
+    if (status >= 400 || status == 0) throw _erroDeDados(status, dados);
+    return dados ?? <String, dynamic>{};
   }
 }
